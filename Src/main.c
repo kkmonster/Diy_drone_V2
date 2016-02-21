@@ -703,10 +703,10 @@ void AHRS(void)
 	float gx = ((float)(rawGyrox_X-gx_diff) / GYROSCOPE_SENSITIVITY )*M_PI/180 ;
 	float gy = ((float)(rawGyrox_Y-gy_diff) / GYROSCOPE_SENSITIVITY )*M_PI/180 ;
 	float gz = ((float)(rawGyrox_Z-gz_diff) / GYROSCOPE_SENSITIVITY )*M_PI/180 ;
-	float mx = ((float)rawMagx_X) / Compass_SENSITIVITY;
-	float my = ((float)rawMagx_Y) / Compass_SENSITIVITY;
-	float mz = ((float)rawMagx_Z) / Compass_SENSITIVITY; 
-		
+	float mx =-((float)rawMagx_Y) / Compass_SENSITIVITY;
+	float my =-((float)rawMagx_X) / Compass_SENSITIVITY;
+	float mz =-((float)rawMagx_Z) / Compass_SENSITIVITY; 
+	
 //   ax = 1;
 //   ay = 1;
 //	 az = 1;
