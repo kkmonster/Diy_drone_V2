@@ -693,15 +693,15 @@ void Interrupt_call(void)
 void AHRS()
 {
 	  float dt = 1000/sampleFreq; 
-		float gx = (float)rawGyrox_X/GYROSCOPE_SENSITIVITY;
-		float gy = (float)rawGyrox_Y/GYROSCOPE_SENSITIVITY;
-		float gz = (float)rawGyrox_Z/GYROSCOPE_SENSITIVITY;
-		float ax = (float)rawAccx_X/ACCELEROMETER_SENSITIVITY;
-		float ay = (float)rawAccx_Y/ACCELEROMETER_SENSITIVITY;
-		float az = (float)rawAccx_Z/ACCELEROMETER_SENSITIVITY;
-    float mx = (float)rawMagx_X/Compass_SENSITIVITY;
-		float my = (float)rawMagx_Y/Compass_SENSITIVITY;
-		float mz = (float)rawMagx_Z/Compass_SENSITIVITY;
+		float gx = ((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY;
+		float gy = ((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY;
+		float gz = ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+		float ax = ((float)rawAccx_X)/ACCELEROMETER_SENSITIVITY;
+		float ay = ((float)rawAccx_Y)/ACCELEROMETER_SENSITIVITY;
+		float az = ((float)rawAccx_Z)/ACCELEROMETER_SENSITIVITY;
+    float mx = ((float)rawMagx_X)/Compass_SENSITIVITY;
+		float my = ((float)rawMagx_Y)/Compass_SENSITIVITY;
+		float mz = ((float)rawMagx_Z)/Compass_SENSITIVITY;
 
 		static uint8_t useMag = 0;
 		static uint8_t useAcc = 1;
