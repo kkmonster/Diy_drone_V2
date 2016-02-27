@@ -113,7 +113,7 @@ int16_t rawGyrox_Z = 1;
 
 int16_t magneticDeclination = 0;
 float Ref_yaw=0, Ref_pitch=0, Ref_roll=0 ;
-int16_t q_yaw, q_pitch, q_roll;                               		// States value
+float q_yaw, q_pitch, q_roll;                               		// States value
 float q0=1, q1=0, q2=0, q3=0;
 float T_center =0, yaw_center=0;
 float Error_yaw=0, Errer_pitch=0, Error_roll=0; 								//States Error
@@ -692,7 +692,7 @@ void Interrupt_call(void)
 
 void AHRS()
 {
-	  float dt = 1000/sampleFreq; 
+	  float dt = 0.005f; 
 		float gx = ((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY;
 		float gy = ((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY;
 		float gz = ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
@@ -753,7 +753,7 @@ void AHRS()
     }
 
     // Calculate kP gain. If we are acquiring initial attitude (not armed and within 20 sec from powerup) scale the kP to converge faster
-    float dcmKpGain = 0.25f;
+    float dcmKpGain = 0.5f;
 
     // Apply proportional and integral feedback
     gx += dcmKpGain * ex;
@@ -788,9 +788,13 @@ void AHRS()
 //    q_pitch = lrintf(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
 //    q_yaw   = lrintf((-atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 
-    q_roll  = (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
-    q_pitch = (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
-    q_yaw   = ((-atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
+    q_roll  = (atan2f(rMat[2][1], rMat[2][2]) * (180.0f / M_PIf));
+    q_pitch = (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (180.0f / M_PIf));
+    q_yaw   = ((-atan2f(rMat[1][0], rMat[0][0]) * (180.0f / M_PIf) + magneticDeclination));
+		
+//	q_pitch = atan2f( 2.0f * (q0q1 + q2q3), q0q0 - q1q1 - q2q2 + q3q3 )* -180.0f / M_PI;
+//	q_roll  = asinf( 2.0f * (q1q3 - q0q2) )* 180.0f / M_PI;
+//	q_yaw 	= atan2f( 2.0f * (q1q2 + q0q3), q0q0 + q1q1 - q2q2 - q3q3 )* 180.0f / M_PI;
 
     if (q_yaw < 0) q_yaw += 3600;
 }
@@ -829,7 +833,7 @@ float Smooth_filter(float alfa, float new_data, float prev_data)
   return output;
 }
 
-static float invSqrt(float x)
+float invSqrt(float x)
 {
     return 1.0f / sqrtf(x);
 }
