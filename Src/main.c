@@ -46,13 +46,13 @@
 #define roll_offset    0.0f     
 #define pitch_offset   0.0f
 
-//#define gx_diff 		-140
-//#define gy_diff 		72
-//#define gz_diff 		-44
+#define gx_diff 		-193
+#define gy_diff 		80
+#define gz_diff 		-70
 
-#define gx_diff 		0
-#define gy_diff 		0
-#define gz_diff 		0
+//#define gx_diff 		0
+//#define gy_diff 		0
+//#define gz_diff 		0
 
 #define Kp_yaw      20.0f
 #define Ki_yaw      0.0f
@@ -496,7 +496,7 @@ void initMPU6000(void)
     ENABLE_MPU6000;
     tmp = MPU6000_SMPLRT_DIV;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // Accel & Gyro Sample Rate 200 Hz
-    tmp = 0x09;
+    tmp = 0x04;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -567,6 +567,10 @@ void Read_MPU6000(void)
 		rawGyrox_X = ((int16_t)rx_tmp[8])<<8 | (int16_t)rx_tmp[9];
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
+	  
+//		a = Smooth_filter(0.1f, rawGyrox_X, a);
+//		b = Smooth_filter(0.1f, rawGyrox_Y, b);	
+//		c = Smooth_filter(0.1f, rawGyrox_Z, c);
 	
 		rawGyrox_X -= gx_diff;
 		rawGyrox_Y -= gy_diff;
@@ -693,17 +697,27 @@ void Interrupt_call(void)
 void AHRS()
 {
 	  float dt = 0.005f; 
-		float gx = ((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY;
-		float gy = ((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY;
-		float gz = ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+		float gx = (((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
+		float gy = (((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
+		float gz = (((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float ax = ((float)rawAccx_X)/ACCELEROMETER_SENSITIVITY;
 		float ay = ((float)rawAccx_Y)/ACCELEROMETER_SENSITIVITY;
 		float az = ((float)rawAccx_Z)/ACCELEROMETER_SENSITIVITY;
-    float mx = ((float)rawMagx_X)/Compass_SENSITIVITY;
-		float my = ((float)rawMagx_Y)/Compass_SENSITIVITY;
-		float mz = ((float)rawMagx_Z)/Compass_SENSITIVITY;
+    float my =-((float)rawMagx_X)/Compass_SENSITIVITY;
+		float mx =-((float)rawMagx_Y)/Compass_SENSITIVITY;
+		float mz =-((float)rawMagx_Z)/Compass_SENSITIVITY;
+	
+//		gx = 0;
+//		gy = 0;
+//		gz = 0;
+//		ax = 0;
+//		ay = 0;
+//		az = 0;
+//    mx = ((float)rawMagx_X)/Compass_SENSITIVITY;
+//		my = ((float)rawMagx_Y)/Compass_SENSITIVITY;
+//		mz = ((float)rawMagx_Z)/Compass_SENSITIVITY;
 
-		static uint8_t useMag = 0;
+		static uint8_t useMag = 1;
 		static uint8_t useAcc = 1;
     float recipNorm;
     float hx, hy, bx;
@@ -753,7 +767,7 @@ void AHRS()
     }
 
     // Calculate kP gain. If we are acquiring initial attitude (not armed and within 20 sec from powerup) scale the kP to converge faster
-    float dcmKpGain = 0.5f;
+    float dcmKpGain = 0.25f;
 
     // Apply proportional and integral feedback
     gx += dcmKpGain * ex;
@@ -784,19 +798,12 @@ void AHRS()
     imuComputeRotationMatrix();
 		
 		/* Compute pitch/roll angles */
-//    q_roll  = lrintf(atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
-//    q_pitch = lrintf(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
-//    q_yaw   = lrintf((-atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 
-    q_roll  = (atan2f(rMat[2][1], rMat[2][2]) * (180.0f / M_PIf));
-    q_pitch = (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (180.0f / M_PIf));
-    q_yaw   = ((-atan2f(rMat[1][0], rMat[0][0]) * (180.0f / M_PIf) + magneticDeclination));
+    q_pitch = (-atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
+    q_roll  = (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_yaw   = ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 		
-//	q_pitch = atan2f( 2.0f * (q0q1 + q2q3), q0q0 - q1q1 - q2q2 + q3q3 )* -180.0f / M_PI;
-//	q_roll  = asinf( 2.0f * (q1q3 - q0q2) )* 180.0f / M_PI;
-//	q_yaw 	= atan2f( 2.0f * (q1q2 + q0q3), q0q0 + q1q1 - q2q2 - q3q3 )* 180.0f / M_PI;
-
-    if (q_yaw < 0) q_yaw += 3600;
+		if (q_yaw < 0) q_yaw += 3600;
 }
 float sq (float x)
  {
