@@ -54,12 +54,12 @@
 //#define gy_diff 		0
 //#define gz_diff 		0
 
-#define Kp_yaw      20.0f
-#define Ki_yaw      0.0f
+#define Kp_yaw      3.5f
+#define Ki_yaw      0.001f
 #define Kd_yaw      0.0f
 
 #define Kp_pitch		16.0f
-#define Ki_pitch    0.0f
+#define Ki_pitch    0.001f
 #define Kd_pitch    9.0f
 
 #define Kp_roll	    Kp_pitch
@@ -113,7 +113,7 @@ int16_t rawGyrox_Z = 1;
 
 int16_t magneticDeclination = 0;
 float Ref_yaw=0, Ref_pitch=0, Ref_roll=0 ;
-float q_yaw, q_pitch, q_roll;                               		// States value
+int16_t q_yaw, q_pitch, q_roll;                               		// States value
 float q0=1, q1=0, q2=0, q3=0;
 float T_center =0, yaw_center=0;
 float Error_yaw=0, Errer_pitch=0, Error_roll=0; 								//States Error
@@ -168,8 +168,8 @@ void AHRS(void);
 float Smooth_filter(float alfa, float new_data, float prev_data);
 float invSqrt(float x) ;
 void imuComputeRotationMatrix(void);
-float sq (float x);
-
+float sq(float x);
+float constrain(float x, float lower_b, float upper_b);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -614,36 +614,41 @@ void PID_controller(void)
 	T_center_buffer    = (float)ch3 *   18.0f;
 	
 	T_center = Smooth_filter(0.4f, T_center_buffer, T_center);
+	T_center = 400;
+	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 	
-	Error_yaw 	= (float)ch4 * 3.0f - q_yaw;
-	Errer_pitch = (float)ch2 * -0.30f - (q_pitch - pitch_offset)	;
-	Error_roll 	= (float)ch1 * 0.30f - (q_roll - roll_offset)	;
-	
-	
-	Sum_Error_yaw 	+= Error_yaw   /sampleFreq ;
-	Sum_Error_pitch += Errer_pitch /sampleFreq ;
-	Sum_Error_roll 	+= Error_roll  /sampleFreq ;
+	Error_yaw 	= -(float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+	Errer_pitch = (float)ch2 * -0.30f - ((float)q_pitch/10.0f - pitch_offset)	;
+	Error_roll 	= (float)ch1 * 0.30f  - ((float)q_roll/10.0f - roll_offset)	;
 	
   // protect  wind-up
-	if(Sum_Error_yaw>limmit_I)Sum_Error_yaw =limmit_I;
-	if(Sum_Error_yaw<-limmit_I)Sum_Error_yaw =-limmit_I;
-	if(Sum_Error_pitch>limmit_I)Sum_Error_pitch =limmit_I;
-	if(Sum_Error_pitch<-limmit_I)Sum_Error_pitch =-limmit_I;
-	if(Sum_Error_roll>limmit_I)Sum_Error_roll =limmit_I;
-	if(Sum_Error_roll<-limmit_I)Sum_Error_roll =-limmit_I;
+	Sum_Error_yaw =   constrain((Sum_Error_yaw   + (Error_yaw   /sampleFreq)), -250.0f / Ki_yaw,   250.0f / Ki_yaw) ;
+	Sum_Error_pitch = constrain((Sum_Error_pitch + (Errer_pitch /sampleFreq)), -250.0f / Ki_pitch, 250.0f / Ki_pitch) ;
+	Sum_Error_roll =  constrain((Sum_Error_roll  + (Error_roll  /sampleFreq)), -250.0f / Ki_roll,  250.0f / Ki_roll) ;
+	
 	
 	D_Error_yaw =  (Error_yaw-Buf_D_Error_yaw)    *sampleFreq ;
 	D_Error_pitch =(Errer_pitch-Buf_D_Errer_pitch)*sampleFreq;
 	D_Error_roll = (Error_roll-Buf_D_Error_roll)*sampleFreq;
 
-	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	* Sum_Error_yaw)       	 + (Kd_yaw * D_Error_yaw) ;
-	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch)     + (Kd_pitch * D_Error_pitch) ;
-	Del_roll	= (Kp_roll  * Error_roll)		+ (Ki_roll	* Sum_Error_roll)      + (Kd_roll * D_Error_roll) ;
+	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	  * Sum_Error_yaw)   + constrain((Kd_yaw * D_Error_yaw), -300, 300);
+	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch) + constrain((Kd_pitch * D_Error_pitch), -300, 300);
+	Del_roll	= (Kp_roll  * Error_roll)		+ (Ki_roll	* Sum_Error_roll)  + constrain((Kd_roll * D_Error_roll), -300, 300);
 
-	motor_A = T_center +Del_pitch	-Del_roll +Del_yaw ;
-	motor_B = T_center +Del_pitch	+Del_roll -Del_yaw ;
-	motor_C = T_center -Del_pitch	+Del_roll +Del_yaw ;
-	motor_D = T_center -Del_pitch	-Del_roll -Del_yaw ;
+	motor_A = T_center + constrain((+Del_pitch	+Del_roll +Del_yaw), -1250, 1250);
+	motor_B = T_center + constrain((+Del_pitch	-Del_roll -Del_yaw), -1250, 1250) ;
+	motor_C = T_center + constrain((-Del_pitch	-Del_roll +Del_yaw), -1250, 1250) ;
+	motor_D = T_center + constrain((-Del_pitch	+Del_roll -Del_yaw), -1250, 1250) ;
+
+}
+
+void Drive_motor_output(void)
+{
+	
+//  motor_A = 100 ;
+//	motor_B = 100 ;
+//	motor_C = 100 ;
+//	motor_D = 100 ;
 	
 	// limmit output max, min
 	if(motor_A < 0) motor_A = 0 ;
@@ -656,14 +661,10 @@ void PID_controller(void)
 	if(motor_C > 2399) motor_C = 2399 ;
 	if(motor_D > 2399) motor_D = 2399 ;
 	
-}
-
-void Drive_motor_output(void)
-{
-	TIM2 ->CCR1 = motor_A ;
-	TIM2 ->CCR2 = motor_B ;
-	TIM3 ->CCR1 = motor_C ;
-	TIM3 ->CCR2 = motor_D ;
+	TIM2 ->CCR1 = motor_D ;
+	TIM2 ->CCR2 = motor_A ;
+	TIM3 ->CCR1 = motor_B ;
+	TIM3 ->CCR2 = motor_C ;
 }
 
 void Interrupt_call(void)
@@ -675,7 +676,7 @@ void Interrupt_call(void)
 		AHRS(); 
 		/* Controller */
 		PID_controller();
-	
+	  watchdog = 10;
     if (watchdog > 0) watchdog --;
 	
 		if((T_center < 50) || (watchdog == 0))		
@@ -691,7 +692,7 @@ void Interrupt_call(void)
 			motor_D=0;
 		}
         
-		Drive_motor_output(); 
+	Drive_motor_output(); 
 }
 
 void AHRS()
@@ -717,7 +718,7 @@ void AHRS()
 //		my = ((float)rawMagx_Y)/Compass_SENSITIVITY;
 //		mz = ((float)rawMagx_Z)/Compass_SENSITIVITY;
 
-		static uint8_t useMag = 1;
+		static uint8_t useMag = 0;
 		static uint8_t useAcc = 1;
     float recipNorm;
     float hx, hy, bx;
@@ -740,6 +741,10 @@ void AHRS()
         // (bx; 0; 0) - reference mag field vector heading due North in EF (assuming Z-component is zero)
         hx = rMat[0][0] * mx + rMat[0][1] * my + rMat[0][2] * mz;
         hy = rMat[1][0] * mx + rMat[1][1] * my + rMat[1][2] * mz;
+			
+				a = hx;
+				b = hy;
+				c = atan2f(a,b)* (1800.0f / M_PIf);
         bx = sqrtf(hx * hx + hy * hy);
 
         // magnetometer error is cross product between estimated magnetic north and measured magnetic north (calculated in EF)
@@ -799,12 +804,20 @@ void AHRS()
 		
 		/* Compute pitch/roll angles */
 
-    q_pitch = (-atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
-    q_roll  = (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
-    q_yaw   = ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
+    q_pitch =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
+    q_roll  = -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 		
 		if (q_yaw < 0) q_yaw += 3600;
 }
+float constrain(float x, float lower_b, float upper_b)
+{
+	if(x < lower_b) x = lower_b;
+	if(x > upper_b) x = upper_b;
+	return x;
+}
+
+
 float sq (float x)
  {
 	 return x*x;
