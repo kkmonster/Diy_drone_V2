@@ -39,19 +39,20 @@
 #define GYROSCOPE_SENSITIVITY       65.5f  
 #define Compass_SENSITIVITY       	1090.0f
 #define M_PI                        3.14159265359f	    
-#define sampleFreq                  100.0f     			    // 200 hz sample rate!   
+#define M_PIf       								3.14159265358979323846f
+#define sampleFreq                  200.0f     			    // 200 hz sample rate!   
 #define limmit_I                    300.0f     
 
 #define roll_offset    0.0f     
 #define pitch_offset   0.0f
 
-#define gx_diff 		-140
-#define gy_diff 		72
-#define gz_diff 		-44
+//#define gx_diff 		-140
+//#define gy_diff 		72
+//#define gz_diff 		-44
 
-//#define gx_diff 		0
-//#define gy_diff 		0
-//#define gz_diff 		0
+#define gx_diff 		0
+#define gy_diff 		0
+#define gz_diff 		0
 
 #define Kp_yaw      20.0f
 #define Ki_yaw      0.0f
@@ -110,8 +111,9 @@ int16_t rawGyrox_X = 1;
 int16_t rawGyrox_Y = 1;
 int16_t rawGyrox_Z = 1;
 
+int16_t magneticDeclination = 0;
 float Ref_yaw=0, Ref_pitch=0, Ref_roll=0 ;
-float q_yaw, q_pitch, q_roll;                               		// States value
+int16_t q_yaw, q_pitch, q_roll;                               		// States value
 float q0=1, q1=0, q2=0, q3=0;
 float T_center =0, yaw_center=0;
 float Error_yaw=0, Errer_pitch=0, Error_roll=0; 								//States Error
@@ -121,6 +123,9 @@ float Del_yaw=0, Del_pitch=0, Del_roll=0;												// Delta states value for r
 float t_compensate = 0;
 float T_center_minus = 0;
 float y_roll=0, y_pitch=0, y0_roll=0, y0_pitch=0 ; 
+
+float rMat[3][3] = {0};
+
 
 uint8_t  I2C_rx_buffer = 0;
 uint8_t  I2C_rx_data[i2c_buffer_size] = {0};
@@ -162,8 +167,8 @@ void Interrupt_call(void);
 void AHRS(void);
 float Smooth_filter(float alfa, float new_data, float prev_data);
 float invSqrt(float x) ;
-
-
+void imuComputeRotationMatrix(void);
+float sq (float x);
 
 /* USER CODE END PFP */
 
@@ -229,7 +234,7 @@ int main(void)
 //		
 //		
 //		Interrupt_call();
-//		HAL_Delay(10);
+//		HAL_Delay(5);
   }
   /* USER CODE END 3 */
 
@@ -517,11 +522,11 @@ void initHMC5983(void)
     ENABLE_HMC5983;
 		tmp = 0x00;
     HAL_SPI_Transmit(HMC5983_SPI, &tmp, 1, 10);          // Write Configuration Register A 
-    tmp = 0xBC ;
+    tmp = 0x70 ;
     HAL_SPI_Transmit(HMC5983_SPI, &tmp, 1, 10);
     DISABLE_HMC5983;
 
-		HAL_Delay(10);
+		HAL_Delay(1);
 
     ENABLE_HMC5983;
 		tmp = 0x01;
@@ -530,7 +535,7 @@ void initHMC5983(void)
     HAL_SPI_Transmit(HMC5983_SPI, &tmp, 1, 10);
     DISABLE_HMC5983;
 
-		HAL_Delay(10);
+		HAL_Delay(1);
 		
 		ENABLE_HMC5983;
 		tmp = 0x02;
@@ -556,12 +561,16 @@ void Read_MPU6000(void)
     HAL_SPI_Receive(MPU6000_SPI, rx_tmp, 14, 10);
     DISABLE_MPU6000;
 				
-		rawAccx_X =  ((int16_t)rx_tmp[0])<<8 | (int16_t)rx_tmp[1];
-		rawAccx_Y =  ((int16_t)rx_tmp[2])<<8 | (int16_t)rx_tmp[3];
-		rawAccx_Z =  ((int16_t)rx_tmp[4])<<8 | (int16_t)rx_tmp[5];
+		rawAccx_X  =  ((int16_t)rx_tmp[0])<<8 | (int16_t)rx_tmp[1];
+		rawAccx_Y  =  ((int16_t)rx_tmp[2])<<8 | (int16_t)rx_tmp[3];
+		rawAccx_Z  =  ((int16_t)rx_tmp[4])<<8 | (int16_t)rx_tmp[5];
 		rawGyrox_X = ((int16_t)rx_tmp[8])<<8 | (int16_t)rx_tmp[9];
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
+	
+		rawGyrox_X -= gx_diff;
+		rawGyrox_Y -= gy_diff;
+		rawGyrox_Z -= gz_diff;
 }
 
 void Read_HMC5983(void)
@@ -570,7 +579,6 @@ void Read_HMC5983(void)
 	ENABLE_HMC5983;
 	uint8_t tmp = 0x03 | 0xC0; 
 	HAL_SPI_Transmit(HMC5983_SPI, &tmp, 1, 10);          // Write Mode Register
-//	uint8_t rx_tmp[6] = {0};
 	HAL_SPI_Receive(HMC5983_SPI, rx_tmp, 6, 10);
 	DISABLE_HMC5983;
 	
@@ -659,8 +667,8 @@ void Interrupt_call(void)
 			/* Read data from sensor */
 		Read_MPU6000();
 		Read_HMC5983();
-	
-		AHRS();
+
+		AHRS(); 
 		/* Controller */
 		PID_controller();
 	
@@ -682,155 +690,148 @@ void Interrupt_call(void)
 		Drive_motor_output(); 
 }
 
-void AHRS(void)
+void AHRS()
 {
-	// quaternion base process 
-	//=====================================================================================================
-	//
-	// Implementation of Madgwick's IMU and AHRS algorithms.
-	// See: http://www.x-io.co.uk/node/8#open_source_ahrs_and_imu_algorithms
-	//
-	// Date			Author          Notes
-	// 29/09/2011	SOH Madgwick  Initial release
-	// 02/10/2011	SOH Madgwick	Optimised for reduced CPU load
-	// 19/02/2012	SOH Madgwick	Magnetometer measurement is normalised
-	//
-	//=====================================================================================================
-	
-	float ax = ((float)rawAccx_X) / ACCELEROMETER_SENSITIVITY;
-	float ay = ((float)rawAccx_Y) / ACCELEROMETER_SENSITIVITY;
-	float az = ((float)rawAccx_Z) / ACCELEROMETER_SENSITIVITY;
-	float gx = ((float)(rawGyrox_X-gx_diff) / GYROSCOPE_SENSITIVITY )*M_PI/180 ;
-	float gy = ((float)(rawGyrox_Y-gy_diff) / GYROSCOPE_SENSITIVITY )*M_PI/180 ;
-	float gz = ((float)(rawGyrox_Z-gz_diff) / GYROSCOPE_SENSITIVITY )*M_PI/180 ;
-	float mx =-((float)rawMagx_Y) / Compass_SENSITIVITY;
-	float my =-((float)rawMagx_X) / Compass_SENSITIVITY;
-	float mz =-((float)rawMagx_Z) / Compass_SENSITIVITY; 
-	
-//   ax = 1;
-//   ay = 1;
-//	 az = 1;
-//	 gx = 1;
-//	 gy = 1;
-//	 gz = 1;
+	  float dt = 1000/sampleFreq; 
+		float gx = (float)rawGyrox_X/GYROSCOPE_SENSITIVITY;
+		float gy = (float)rawGyrox_Y/GYROSCOPE_SENSITIVITY;
+		float gz = (float)rawGyrox_Z/GYROSCOPE_SENSITIVITY;
+		float ax = (float)rawAccx_X/ACCELEROMETER_SENSITIVITY;
+		float ay = (float)rawAccx_Y/ACCELEROMETER_SENSITIVITY;
+		float az = (float)rawAccx_Z/ACCELEROMETER_SENSITIVITY;
+    float mx = (float)rawMagx_X/Compass_SENSITIVITY;
+		float my = (float)rawMagx_Y/Compass_SENSITIVITY;
+		float mz = (float)rawMagx_Z/Compass_SENSITIVITY;
+
+		static uint8_t useMag = 0;
+		static uint8_t useAcc = 1;
+    float recipNorm;
+    float hx, hy, bx;
+    float ex = 0, ey = 0, ez = 0;
+    float qa, qb, qc;
+
+    // Use measured magnetic field vector
+    recipNorm = sq(mx) + sq(my) + sq(mz);
+    if (useMag && (recipNorm > 0.01f)) {
+        // Normalise magnetometer measurement
+        recipNorm = invSqrt(recipNorm);
+        mx *= recipNorm;
+        my *= recipNorm;
+        mz *= recipNorm;
+
+        // For magnetometer correction we make an assumption that magnetic field is perpendicular to gravity (ignore Z-component in EF).
+        // This way magnetic field will only affect heading and wont mess roll/pitch angles
+
+        // (hx; hy; 0) - measured mag field vector in EF (assuming Z-component is zero)
+        // (bx; 0; 0) - reference mag field vector heading due North in EF (assuming Z-component is zero)
+        hx = rMat[0][0] * mx + rMat[0][1] * my + rMat[0][2] * mz;
+        hy = rMat[1][0] * mx + rMat[1][1] * my + rMat[1][2] * mz;
+        bx = sqrtf(hx * hx + hy * hy);
+
+        // magnetometer error is cross product between estimated magnetic north and measured magnetic north (calculated in EF)
+        float ez_ef = -(hy * bx);
+
+        // Rotate mag error vector back to BF and accumulate
+        ex += rMat[2][0] * ez_ef;
+        ey += rMat[2][1] * ez_ef;
+        ez += rMat[2][2] * ez_ef;
+    }
+
+    // Use measured acceleration vector
+    recipNorm = sq(ax) + sq(ay) + sq(az);
+    if (useAcc && (recipNorm > 0.01f)) {
+        // Normalise accelerometer measurement
+        recipNorm = invSqrt(recipNorm);
+        ax *= recipNorm;
+        ay *= recipNorm;
+        az *= recipNorm;
+
+        // Error is sum of cross product between estimated direction and measured direction of gravity
+        ex += (ay * rMat[2][2] - az * rMat[2][1]);
+        ey += (az * rMat[2][0] - ax * rMat[2][2]);
+        ez += (ax * rMat[2][1] - ay * rMat[2][0]);
+    }
+
+    // Calculate kP gain. If we are acquiring initial attitude (not armed and within 20 sec from powerup) scale the kP to converge faster
+    float dcmKpGain = 0.25f;
+
+    // Apply proportional and integral feedback
+    gx += dcmKpGain * ex;
+    gy += dcmKpGain * ey;
+    gz += dcmKpGain * ez;
+
+    // Integrate rate of change of quaternion
+    gx *= (0.5f * dt);
+    gy *= (0.5f * dt);
+    gz *= (0.5f * dt);
+
+    qa = q0;
+    qb = q1;
+    qc = q2;
+    q0 += (-qb * gx - qc * gy - q3 * gz);
+    q1 += (qa * gx + qc * gz - q3 * gy);
+    q2 += (qa * gy - qb * gz + q3 * gx);
+    q3 += (qa * gz + qb * gy - qc * gx);
+
+    // Normalise quaternion
+    recipNorm = invSqrt(sq(q0) + sq(q1) + sq(q2) + sq(q3));
+    q0 *= recipNorm;
+    q1 *= recipNorm;
+    q2 *= recipNorm;
+    q3 *= recipNorm;
+
+    // Pre-compute rotation matrix from quaternion
+    imuComputeRotationMatrix();
 		
-	a = Smooth_filter(0.001f, rawGyrox_X, a);
-	b = Smooth_filter(0.001f, rawGyrox_Y, b);
-	c = Smooth_filter(0.001f, rawGyrox_Z, c);
-	
-	  
-	float recipNorm;
-	float s0, s1, s2, s3;
-	float qDot1, qDot2, qDot3, qDot4;
-	float hx, hy;
-	float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3, q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
+		/* Compute pitch/roll angles */
+//    q_roll  = lrintf(atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
+//    q_pitch = lrintf(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+//    q_yaw   = lrintf((-atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 
+    q_roll  = (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
+    q_pitch = (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_yaw   = ((-atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 
-	// Rate of change of quaternion from gyroscope
-	qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
-	qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
-	qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
-	qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
-
-	// Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
-	if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
-
-		// Normalise accelerometer measurement
-		recipNorm = invSqrt(ax * ax + ay * ay + az * az);
-		ax *= recipNorm;
-		ay *= recipNorm;
-		az *= recipNorm;   
-
-		// Normalise magnetometer measurement
-		recipNorm = invSqrt(mx * mx + my * my + mz * mz);
-		mx *= recipNorm;
-		my *= recipNorm;
-		mz *= recipNorm;
-
-		// Auxiliary variables to avoid repeated arithmetic
-		_2q0mx = 2.0f * q0 * mx;
-		_2q0my = 2.0f * q0 * my;
-		_2q0mz = 2.0f * q0 * mz;
-		_2q1mx = 2.0f * q1 * mx;
-		_2q0 = 2.0f * q0;
-		_2q1 = 2.0f * q1;
-		_2q2 = 2.0f * q2;
-		_2q3 = 2.0f * q3;
-		_2q0q2 = 2.0f * q0 * q2;
-		_2q2q3 = 2.0f * q2 * q3;
-		q0q0 = q0 * q0;
-		q0q1 = q0 * q1;
-		q0q2 = q0 * q2;
-		q0q3 = q0 * q3;
-		q1q1 = q1 * q1;
-		q1q2 = q1 * q2;
-		q1q3 = q1 * q3;
-		q2q2 = q2 * q2;
-		q2q3 = q2 * q3;
-		q3q3 = q3 * q3;
-
-		// Reference direction of Earth's magnetic field
-		hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 + _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
-		hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 + my * q2q2 + _2q2 * mz * q3 - my * q3q3;
-		_2bx = sqrt(hx * hx + hy * hy);
-		_2bz = -_2q0mx * q2 + _2q0my * q1 + mz * q0q0 + _2q1mx * q3 - mz * q1q1 + _2q2 * my * q3 - mz * q2q2 + mz * q3q3;
-		_4bx = 2.0f * _2bx;
-		_4bz = 2.0f * _2bz;
-
-		// Gradient decent algorithm corrective step
-		s0 = -_2q2 * (2.0f * q1q3 - _2q0q2 - ax) + _2q1 * (2.0f * q0q1 + _2q2q3 - ay) - _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q3 + _2bz * q1) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q2 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-		s1 = _2q3 * (2.0f * q1q3 - _2q0q2 - ax) + _2q0 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q1 * (1 - 2.0f * q1q1 - 2.0f * q2q2 - az) + _2bz * q3 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q2 + _2bz * q0) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q3 - _4bz * q1) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-		s2 = -_2q0 * (2.0f * q1q3 - _2q0q2 - ax) + _2q3 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q2 * (1 - 2.0f * q1q1 - 2.0f * q2q2 - az) + (-_4bx * q2 - _2bz * q0) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q1 + _2bz * q3) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q0 - _4bz * q2) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-		s3 = _2q1 * (2.0f * q1q3 - _2q0q2 - ax) + _2q2 * (2.0f * q0q1 + _2q2q3 - ay) + (-_4bx * q3 + _2bz * q1) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q0 + _2bz * q2) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q1 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-	
-   	// normalise step magnitude
-		recipNorm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); 
-		s0 *= recipNorm;
-		s1 *= recipNorm;
-		s2 *= recipNorm;
-		s3 *= recipNorm;
-
-		// Apply feedback step
-		qDot1 -= beta * s0;
-		qDot2 -= beta * s1;
-		qDot3 -= beta * s2;
-		qDot4 -= beta * s3;
-	}
-
-	// Integrate rate of change of quaternion to yield quaternion
-	q0 += qDot1 * (1.0f / sampleFreq);
-	q1 += qDot2 * (1.0f / sampleFreq);
-	q2 += qDot3 * (1.0f / sampleFreq);
-	q3 += qDot4 * (1.0f / sampleFreq);
-
-	// Normalise quaternion
-	recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
-	q0 *= recipNorm;
-	q1 *= recipNorm;
-	q2 *= recipNorm;
-	q3 *= recipNorm;
-	
-	// convert to euler
-	q_pitch = atan2f( 2.0f * (q0q1 + q2q3), q0q0 - q1q1 - q2q2 + q3q3 )* -180.0f / M_PI;
-	q_roll  = asinf( 2.0f * (q1q3 - q0q2) )* 180.0f / M_PI;
-	q_yaw 	= atan2f( 2.0f * (q1q2 + q0q3), q0q0 + q1q1 - q2q2 - q3q3 )* 180.0f / M_PI;
+    if (q_yaw < 0) q_yaw += 3600;
 }
+float sq (float x)
+ {
+	 return x*x;
+ }
+void imuComputeRotationMatrix(void)
+{
+    float q1q1 = sq(q1);
+    float q2q2 = sq(q2);
+    float q3q3 = sq(q3);
+    
+    float q0q1 = q0 * q1;
+    float q0q2 = q0 * q2;
+    float q0q3 = q0 * q3;
+    float q1q2 = q1 * q2;
+    float q1q3 = q1 * q3;
+    float q2q3 = q2 * q3;
 
+    rMat[0][0] = 1.0f - 2.0f * q2q2 - 2.0f * q3q3;
+    rMat[0][1] = 2.0f * (q1q2 + -q0q3);
+    rMat[0][2] = 2.0f * (q1q3 - -q0q2);
+
+    rMat[1][0] = 2.0f * (q1q2 - -q0q3);
+    rMat[1][1] = 1.0f - 2.0f * q1q1 - 2.0f * q3q3;
+    rMat[1][2] = 2.0f * (q2q3 + -q0q1);
+
+    rMat[2][0] = 2.0f * (q1q3 + -q0q2);
+    rMat[2][1] = 2.0f * (q2q3 - -q0q1);
+    rMat[2][2] = 1.0f - 2.0f * q1q1 - 2.0f * q2q2;
+}
 float Smooth_filter(float alfa, float new_data, float prev_data)
 {
   float output = prev_data + (alfa * (new_data - prev_data));
   return output;
 }
 
-float invSqrt(float x) 
+static float invSqrt(float x)
 {
-	float halfx = 0.5f * x;
-	float y = x;
-	long i = *(long*)&y;
-	i = 0x5f3759df - (i>>1);
-	y = *(float*)&i;
-	y = y * (1.5f - (halfx * y * y));
-	return y;
+    return 1.0f / sqrtf(x);
 }
 
 void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
