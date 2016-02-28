@@ -40,7 +40,7 @@
 #define Compass_SENSITIVITY       	1090.0f
 #define M_PI                        3.14159265359f	    
 #define M_PIf       								3.14159265358979323846f
-#define sampleFreq                  200.0f     			    // 200 hz sample rate!   
+#define sampleFreq                  500.0f     			    // 200 hz sample rate!   
 #define limmit_I                    300.0f     
 
 #define roll_offset    0.0f     
@@ -496,7 +496,7 @@ void initMPU6000(void)
     ENABLE_MPU6000;
     tmp = MPU6000_SMPLRT_DIV;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // Accel & Gyro Sample Rate 200 Hz
-    tmp = 0x04;
+    tmp = 0x01;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -697,7 +697,7 @@ void Interrupt_call(void)
 
 void AHRS()
 {
-	  float dt = 0.005f; 
+	  float dt = 0.002f; 
 		float gx = (((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float gy = (((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float gz = (((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
