@@ -36,25 +36,28 @@ byte data[512] = {0};
 unsigned int localPort = 12345;
 TuningData tuningData[3] = {0};
 
-#ifdef Print_Debug    
+#ifdef Print_Debug
 String yawPitchRollText[3] = {"Yaw....:", "Pitch..:", "Roll...:"};
 String output = "";
 String lastOutput = "";
 #endif
 
+int8_t Trim_value[3] = {0};  // trim //  yaw : pitch : roll
 char accessPointName[DEFAULT_SSID_LENGTH] = {'\0'};
 Ticker ticker_DEGUG;
 
 
 String readEEPROM(int index, int length);
 int writeEEPROM(int index, String text);
-void loadTuningData();
+void loadTuningData(void);
 void saveTuningData(int i);
+void loadTrimData(void);
+void saveTrimData(int8_t *tmp);
 String ipToString(IPAddress ip);
 String floatToString(float value, int length, int decimalPalces);
 String intToString(int value, int length);
 String hexToString(byte value);
-void Debug(void);
+void blink(void);
 void Read_udp(void);
 
 
@@ -66,7 +69,7 @@ void setup()
 {
   WiFi.mode(WIFI_STA);
   delay(50);
-  
+
   WiFi.disconnect();
   delay(200);
 
@@ -77,7 +80,7 @@ void setup()
   sprintf(accessPointName, "B-Drone-%lu", ESP.getChipId());
   WiFi.softAP(accessPointName, "12345678");
   delay(50);
-  accessPointName[DEFAULT_SSID_LENGTH-1] = {'\0'};
+  accessPointName[DEFAULT_SSID_LENGTH - 1] = {'\0'};
 
 
   WiFi.mode(WIFI_AP_STA);
@@ -91,7 +94,7 @@ void setup()
 
 #ifdef Print_Debug
 
-	Serial.println("");
+  Serial.println("");
   Serial.print("RemoteTest Access Point: ");
   Serial.println(accessPointName);
   Serial.print("IP Address: ");
@@ -106,8 +109,8 @@ void setup()
   delay(50);
 
   loadTuningData();
-
-  ticker_DEGUG.attach_ms(500, Debug);
+	loadTrimData();
+  ticker_DEGUG.attach_ms(500, blink);
 }
 
 void loop()
@@ -125,7 +128,7 @@ void Read_udp(void)
 
     udp.read(data, numberOfBytes);
 
-   
+
 
     if (data[0] == 0XF0 && data[1] == 0XF0) // tuning data
     {
@@ -134,7 +137,7 @@ void Read_udp(void)
       int16_t checksum = tuningDataBuffer.yawPitchRoll + tuningDataBuffer.kp + tuningDataBuffer.ki + tuningDataBuffer.kd;
       tuningDataBuffer.ssid[DEFAULT_SSID_LENGTH - 1] = '\0';
 
-      
+
       if (tuningDataBuffer.yawPitchRoll >= 0X01 && tuningDataBuffer.yawPitchRoll <= 0X03 && tuningDataBuffer.checksum == checksum && strcmp(tuningDataBuffer.ssid, accessPointName) == 0)
       {
         int i = tuningDataBuffer.yawPitchRoll - 1;
@@ -147,25 +150,25 @@ void Read_udp(void)
 
 #ifdef Print_Debug
 
-			Serial.print("startByte:");Serial.print(tuningDataBuffer.startByte,HEX);
-			Serial.print("	startByte2:");Serial.println(tuningDataBuffer.startByte2,HEX);
-			Serial.print("	yawPitchRoll:");Serial.print(yawPitchRollText[tuningDataBuffer.yawPitchRoll-1]);
-			Serial.print("	kp:");Serial.print(kp);
-			Serial.print("	ki:");Serial.print(ki);
-			Serial.print("	kd:");Serial.println(kd);
-			Serial.print("	checksum:");Serial.println(tuningDataBuffer.checksum);
-			Serial.print("	check ssid:");Serial.println(strcmp(tuningDataBuffer.ssid, accessPointName) == 0);
+        Serial.print("startByte:"); Serial.print(tuningDataBuffer.startByte, HEX);
+        Serial.print("	startByte2:"); Serial.println(tuningDataBuffer.startByte2, HEX);
+        Serial.print("	yawPitchRoll:"); Serial.print(yawPitchRollText[tuningDataBuffer.yawPitchRoll - 1]);
+        Serial.print("	kp:"); Serial.print(kp);
+        Serial.print("	ki:"); Serial.print(ki);
+        Serial.print("	kd:"); Serial.println(kd);
+        Serial.print("	checksum:"); Serial.println(tuningDataBuffer.checksum);
+        Serial.print("	check ssid:"); Serial.println(strcmp(tuningDataBuffer.ssid, accessPointName) == 0);
 
-    //     if (i == 0)
-    //     {
-    //     	String string_tmp_0 = "";
-    //       string_tmp_0 += String("Receive tuning data from ") + ipToString(udp.remoteIP()) + " port " + udp.remotePort() + ":";
-    //       Serial.println(string_tmp_0);
-    //     }
+        //     if (i == 0)
+        //     {
+        //     	String string_tmp_0 = "";
+        //       string_tmp_0 += String("Receive tuning data from ") + ipToString(udp.remoteIP()) + " port " + udp.remotePort() + ":";
+        //       Serial.println(string_tmp_0);
+        //     }
 
-				// String string_tmp_1 = "";
-    //     string_tmp_1 = String(yawPitchRollText[i]) + " KP " + floatToString(kp, 5, 1) + ", KI " + floatToString(ki, 5, 1) + ", KD " + floatToString(kd, 5, 1);
-    //     Serial.println(string_tmp_1
+        // String string_tmp_1 = "";
+        //     string_tmp_1 = String(yawPitchRollText[i]) + " KP " + floatToString(kp, 5, 1) + ", KI " + floatToString(ki, 5, 1) + ", KD " + floatToString(kd, 5, 1);
+        //     Serial.println(string_tmp_1
 #endif
 
 
@@ -190,14 +193,14 @@ void Read_udp(void)
           tuningDataBuffer.kd = tuningData[i].kd;
           tuningDataBuffer.checksum = tuningDataBuffer.yawPitchRoll + tuningDataBuffer.kp + tuningDataBuffer.ki + tuningDataBuffer.kd;
           memcpy(&data, &tuningDataBuffer, sizeof(TuningData));
-				
+
 #ifdef Print_Debug
 
 
 
           if (i == 0)
           {
-          	String string_tmp_3 = "";
+            String string_tmp_3 = "";
             string_tmp_3 += String("Send tuning data to ") + ipToString(udp.remoteIP()) + " port " + udp.remotePort() + ":";
             Serial.println(string_tmp_3);
           }
@@ -208,6 +211,17 @@ void Read_udp(void)
           string_tmp_4 += hexToString(tuningDataBuffer.yawPitchRoll) + ", ";
           string_tmp_4 += intToString(tuningDataBuffer.kp, 4) + ", " + intToString(tuningDataBuffer.ki, 4) + ", " + intToString(tuningDataBuffer.kd, 4) + ", " + intToString(tuningDataBuffer.checksum, 4);
           Serial.println(string_tmp_4);
+
+          TuningData tuningDataBuffer_check = {0};
+          memcpy(&tuningDataBuffer_check, data, sizeof(TuningData));
+
+          Serial.print("startByte:"); Serial.print(tuningDataBuffer_check.startByte, HEX);
+          Serial.print("	startByte2:"); Serial.println(tuningDataBuffer_check.startByte2, HEX);
+          Serial.print("	yawPitchRoll:"); Serial.print(yawPitchRollText[tuningDataBuffer_check.yawPitchRoll - 1]);
+          Serial.print("	kp:"); Serial.print(tuningDataBuffer_check.kp);
+          Serial.print("	ki:"); Serial.print(tuningDataBuffer_check.ki);
+          Serial.print("	kd:"); Serial.println(tuningDataBuffer_check.kd);
+          Serial.print("	checksum:"); Serial.println(tuningDataBuffer_check.checksum);
 
 #endif
 
@@ -220,30 +234,30 @@ void Read_udp(void)
     }
     else if (data[0] == 0XFE) // trim and control
     {
-
+			static ControlData controlData_prev;
       ControlData controlData = {0};
       memcpy(&controlData, data, sizeof(ControlData));
+      memcpy(&controlData_prev, data, sizeof(ControlData));
+      // #ifdef Print_Debug
+      // // typedef struct
+      // // {
+      // //   int8_t startByte;
+      // //   int8_t roll;
+      // //   int8_t pitch;
+      // //   int8_t throttle;
+      // //   int8_t yaw;
+      // //   int8_t checksum;
+      // //   char ssid[DEFAULT_SSID_LENGTH];
+      // // } ControlData;
 
-#ifdef Print_Debug
-// typedef struct
-// {
-//   int8_t startByte;
-//   int8_t roll;
-//   int8_t pitch;
-//   int8_t throttle;
-//   int8_t yaw;
-//   int8_t checksum;
-//   char ssid[DEFAULT_SSID_LENGTH];
-// } ControlData;
-
-			Serial.print("startByte:");Serial.print(controlData.startByte,HEX);
-			Serial.print("	roll:");Serial.print(controlData.roll);
-			Serial.print("	pitch:");Serial.print(controlData.pitch);
-			Serial.print("	throttle:");Serial.print(controlData.throttle);
-			Serial.print("	yaw:");Serial.println(controlData.yaw);
-			Serial.print("	checksum:");Serial.println(controlData.checksum);
-			Serial.print("	check ssid:");Serial.println(strcmp(controlData.ssid, accessPointName) == 0);
-#endif
+      // 			Serial.print("startByte:");Serial.print(controlData.startByte,HEX);
+      // 			Serial.print("	roll:");Serial.print(controlData.roll);
+      // 			Serial.print("	pitch:");Serial.print(controlData.pitch);
+      // 			Serial.print("	throttle:");Serial.print(controlData.throttle);
+      // 			Serial.print("	yaw:");Serial.println(controlData.yaw);
+      // 			Serial.print("	checksum:");Serial.println(controlData.checksum);
+      // 			Serial.print("	check ssid:");Serial.println(strcmp(controlData.ssid, accessPointName) == 0);
+      // #endif
 
       int8_t checksum = controlData.roll + controlData.pitch + controlData.throttle + controlData.yaw;
       controlData.ssid[DEFAULT_SSID_LENGTH - 1] = '\0';
@@ -254,15 +268,22 @@ void Read_udp(void)
 
         if (controlData.roll == trimFlag && controlData.pitch == trimFlag && controlData.throttle == trimFlag && controlData.yaw == trimFlag)
         {
+        	// Trim //
+	 				int8_t trim_tmp_0[3] = {0};
+	 				trim_tmp_0[0] = controlData_prev.roll;
+					trim_tmp_0[1] = controlData_prev.pitch;
+					trim_tmp_0[2] = controlData_prev.yaw;
+	 				saveTrimData(trim_tmp_0);
 
 
-
-#ifdef Print_Debug        	
+#ifdef Print_Debug
           Serial.println("Trim");
-#endif          
+#endif
         }
         else
         {
+        	// control //
+					memcpy(&controlData_prev, data, sizeof(ControlData));
 
 #ifdef Print_Debug
           output = String("Roll ") + intToString(controlData.roll, 4) + ", Pitch " + intToString(controlData.pitch, 4) + ", Throttle " + intToString(controlData.throttle, 3) + ", Yaw " + intToString(controlData.yaw, 4);
@@ -309,11 +330,11 @@ int writeEEPROM(int index, String text)
   return text.length() + 1;
 }
 
-void loadTuningData()
+void loadTuningData(void)
 {
   for (int i = 0; i < 3; i++)
   {
-    int address = i * 12;
+    int address = (i + 1) * 12;
 
     String str = readEEPROM(address, 4);
     tuningData[i].kp = str.toInt();
@@ -330,7 +351,7 @@ void loadTuningData()
 
 void saveTuningData(int i)
 {
-  int address = i * 12;
+  int address = (i + 1) * 12;
 
   String str = String(tuningData[i].kp);
   writeEEPROM(address, str);
@@ -342,6 +363,27 @@ void saveTuningData(int i)
 
   str = String(tuningData[i].kd);
   writeEEPROM(address, str);
+}
+
+void loadTrimData(void)
+{
+  for (int i = 0; i < 3; i++)
+  {
+    int address = (i) * 2;
+
+  	Trim_value[i] = EEPROM.read(address);
+
+  }
+}
+
+void saveTrimData(int8_t *tmp)
+{
+  for (int i = 0; i < 3; i++)
+  {
+    int address = (i) * 2;
+		EEPROM.write(address, *tmp+i );
+  }
+  EEPROM.commit();
 }
 
 String ipToString(IPAddress ip)
@@ -389,7 +431,7 @@ String hexToString(byte value)
   return "0x" + prefix + stringValue;
 }
 
-void Debug(void)
+void blink(void)
 {
   static int8_t led = 0;
   led = 1 - led;
