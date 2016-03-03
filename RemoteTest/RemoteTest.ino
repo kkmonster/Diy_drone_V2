@@ -35,9 +35,13 @@ WiFiUDP udp;
 byte data[512] = {0};
 unsigned int localPort = 12345;
 TuningData tuningData[3] = {0};
+
+#ifdef Print_Debug    
 String yawPitchRollText[3] = {"Yaw....:", "Pitch..:", "Roll...:"};
 String output = "";
 String lastOutput = "";
+#endif
+
 char accessPointName[DEFAULT_SSID_LENGTH] = {'\0'};
 Ticker ticker_DEGUG;
 
@@ -62,25 +66,25 @@ void setup()
 {
   WiFi.mode(WIFI_STA);
   delay(50);
+  
   WiFi.disconnect();
   delay(200);
 
   pinMode(LED, OUTPUT);
   delay(200);
+
   Serial.begin(115200);
-
-
   sprintf(accessPointName, "B-Drone-%lu", ESP.getChipId());
   WiFi.softAP(accessPointName, "12345678");
-  accessPointName[DEFAULT_SSID_LENGTH-1] = {'\0'};
   delay(50);
+  accessPointName[DEFAULT_SSID_LENGTH-1] = {'\0'};
+
 
   WiFi.mode(WIFI_AP_STA);
-
   delay(50);
+
   WiFi.softAPConfig(local_ip, gateway, subnet);
   delay(50);
-
 
   udp.begin(localPort);
   delay(50);
@@ -121,7 +125,7 @@ void Read_udp(void)
 
     udp.read(data, numberOfBytes);
 
-    Serial.print("data0:");    Serial.print(data[0]);    Serial.print("data1:");    Serial.println(data[1]);
+   
 
     if (data[0] == 0XF0 && data[1] == 0XF0) // tuning data
     {
@@ -129,8 +133,8 @@ void Read_udp(void)
       memcpy(&tuningDataBuffer, data, sizeof(TuningData));
       int16_t checksum = tuningDataBuffer.yawPitchRoll + tuningDataBuffer.kp + tuningDataBuffer.ki + tuningDataBuffer.kd;
       tuningDataBuffer.ssid[DEFAULT_SSID_LENGTH - 1] = '\0';
-			Serial.print("	check ssid:");Serial.println(tuningDataBuffer.ssid);
-      //if (tuningDataBuffer.yawPitchRoll >= 0X01 && tuningDataBuffer.yawPitchRoll <= 0X03 && tuningDataBuffer.checksum == checksum)
+
+      
       if (tuningDataBuffer.yawPitchRoll >= 0X01 && tuningDataBuffer.yawPitchRoll <= 0X03 && tuningDataBuffer.checksum == checksum && strcmp(tuningDataBuffer.ssid, accessPointName) == 0)
       {
         int i = tuningDataBuffer.yawPitchRoll - 1;
@@ -169,7 +173,7 @@ void Read_udp(void)
     }
     else if (data[0] == 0XFC && data[1] == 0XFC) // get tuning data
     {
-    	Serial.println("get tuning data");
+
       TuningData tuningDataBuffer = {0};
       memcpy(&tuningDataBuffer, data, sizeof(TuningData));
       int16_t checksum = tuningDataBuffer.yawPitchRoll + tuningDataBuffer.kp + tuningDataBuffer.ki + tuningDataBuffer.kd;
@@ -216,7 +220,7 @@ void Read_udp(void)
     }
     else if (data[0] == 0XFE) // trim and control
     {
-			Serial.println("trim and control");
+
       ControlData controlData = {0};
       memcpy(&controlData, data, sizeof(ControlData));
 
@@ -250,10 +254,17 @@ void Read_udp(void)
 
         if (controlData.roll == trimFlag && controlData.pitch == trimFlag && controlData.throttle == trimFlag && controlData.yaw == trimFlag)
         {
+
+
+
+#ifdef Print_Debug        	
           Serial.println("Trim");
+#endif          
         }
         else
         {
+
+#ifdef Print_Debug
           output = String("Roll ") + intToString(controlData.roll, 4) + ", Pitch " + intToString(controlData.pitch, 4) + ", Throttle " + intToString(controlData.throttle, 3) + ", Yaw " + intToString(controlData.yaw, 4);
 
           if (output != lastOutput)
@@ -261,6 +272,7 @@ void Read_udp(void)
             lastOutput = output;
             Serial.println(output);
           }
+#endif
         }
       }
 
