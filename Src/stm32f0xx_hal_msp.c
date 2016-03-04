@@ -98,6 +98,9 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
 
     __HAL_LINKDMA(hi2c,hdmarx,hdma_i2c1_rx);
 
+  /* Peripheral interrupt init*/
+    HAL_NVIC_SetPriority(I2C1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(I2C1_IRQn);
   /* USER CODE BEGIN I2C1_MspInit 1 */
 
   /* USER CODE END I2C1_MspInit 1 */
@@ -124,6 +127,10 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* hi2c)
 
     /* Peripheral DMA DeInit*/
     HAL_DMA_DeInit(hi2c->hdmarx);
+
+    /* Peripheral interrupt DeInit*/
+    HAL_NVIC_DisableIRQ(I2C1_IRQn);
+
   }
   /* USER CODE BEGIN I2C1_MspDeInit 1 */
 

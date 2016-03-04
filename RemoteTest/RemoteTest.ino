@@ -5,7 +5,7 @@
 #include <Wire.h>
 
 #define DEFAULT_SSID_LENGTH 16
-#define ARM_Address 110
+#define ARM_Address 55
 #define LED 16
 #define Print_Debug
 
@@ -115,15 +115,28 @@ void setup()
   delay(50);
 
   loadTuningData();
-	loadTrimData();
+  loadTrimData();
   delay(50);
 
-	while (setPIDgain() != 1)
-	{
-		delay(5);
-	}
+  int error = 20 ;
+  while (setPIDgain() != 1 && error > 0)
+  {
+    delay(5);
+    error--;
+#ifdef Print_Debug
 
-  ticker_DEGUG.attach_ms(500, blink);
+    Serial.println("setPIDgain");
+
+#endif
+  }
+
+  if (error > 0)
+  {
+    ticker_DEGUG.attach_ms(500, blink);
+  } else {
+    ticker_DEGUG.attach_ms(50, blink);
+  }
+
 }
 
 void loop()
@@ -184,6 +197,17 @@ void Read_udp(void)
         //     Serial.println(string_tmp_1
 #endif
 
+        int error = 5 ;
+        while (setPIDgain() != 1 && error > 0)
+        {
+          delay(5);
+          error--;
+#ifdef Print_Debug
+
+          Serial.println("setPIDgain");
+
+#endif
+        }
 
       }
     }
@@ -247,7 +271,7 @@ void Read_udp(void)
     }
     else if (data[0] == 0XFE) // trim and control
     {
-			static ControlData controlData_prev;
+      static ControlData controlData_prev;
       ControlData controlData = {0};
       memcpy(&controlData, data, sizeof(ControlData));
       memcpy(&controlData_prev, data, sizeof(ControlData));
@@ -281,13 +305,15 @@ void Read_udp(void)
 
         if (controlData.roll == trimFlag && controlData.pitch == trimFlag && controlData.throttle == trimFlag && controlData.yaw == trimFlag)
         {
-        	// Trim //
-	 				int8_t trim_tmp_0[3] = {0};
-	 				trim_tmp_0[0] = controlData_prev.roll;
-					trim_tmp_0[1] = controlData_prev.pitch;
-					trim_tmp_0[2] = controlData_prev.yaw;
-	 				saveTrimData(trim_tmp_0);
-	 				memcpy(&Trim_value, &trim_tmp_0, 3);
+          // Trim //
+          int8_t trim_tmp_0[3] = {0};
+          trim_tmp_0[0] = controlData_prev.roll;
+          trim_tmp_0[1] = controlData_prev.pitch;
+          trim_tmp_0[2] = controlData_prev.yaw;
+          saveTrimData(trim_tmp_0);
+          memcpy(&Trim_value, &trim_tmp_0, 3);
+
+
 
 #ifdef Print_Debug
           Serial.println("Trim");
@@ -295,11 +321,11 @@ void Read_udp(void)
         }
         else
         {
-        	// control //
+          // control //
 
-        	sentControlcommand(controlData.roll+Trim_value[0] , controlData.pitch+Trim_value[1], controlData.throttle, controlData.yaw+Trim_value[2] );
+          sentControlcommand(controlData.roll + Trim_value[0] , controlData.pitch + Trim_value[1], controlData.throttle, controlData.yaw + Trim_value[2] );
 
-  				memcpy(&controlData_prev, data, sizeof(ControlData));
+          memcpy(&controlData_prev, data, sizeof(ControlData));
 
 #ifdef Print_Debug
           output = String("Roll ") + intToString(controlData.roll, 4) + ", Pitch " + intToString(controlData.pitch, 4) + ", Throttle " + intToString(controlData.throttle, 3) + ", Yaw " + intToString(controlData.yaw, 4);
@@ -387,7 +413,7 @@ void loadTrimData(void)
   {
     int address = (i) * 2;
 
-  	Trim_value[i] = EEPROM.read(address);
+    Trim_value[i] = EEPROM.read(address);
 
   }
 }
@@ -397,7 +423,7 @@ void saveTrimData(int8_t *tmp)
   for (int i = 0; i < 3; i++)
   {
     int address = (i) * 2;
-		EEPROM.write(address, *tmp+i );
+    EEPROM.write(address, *tmp + i );
   }
   EEPROM.commit();
 }
@@ -459,34 +485,34 @@ uint8_t setPIDgain(void)
   int16_t temp ;
   uint8_t command = 0XFE;
 
-  uint8_t data_buffer[20] ={0};
+  uint8_t data_buffer[20] = {0};
 
-  data_buffer[0] = (uint8_t)(tuningData[0].kp>>8);
+  data_buffer[0] = (uint8_t)(tuningData[0].kp >> 8);
   data_buffer[1] = (uint8_t)(tuningData[0].kp);
-  data_buffer[2] = (uint8_t)(tuningData[0].ki>>8);
+  data_buffer[2] = (uint8_t)(tuningData[0].ki >> 8);
   data_buffer[3] = (uint8_t)(tuningData[0].ki);
-  data_buffer[4] = (uint8_t)(tuningData[0].kd>>8);
+  data_buffer[4] = (uint8_t)(tuningData[0].kd >> 8);
   data_buffer[5] = (uint8_t)(tuningData[0].kd);
-  data_buffer[6] = (uint8_t)(tuningData[1].kp>>8);
+  data_buffer[6] = (uint8_t)(tuningData[1].kp >> 8);
   data_buffer[7] = (uint8_t)(tuningData[1].kp);
-  data_buffer[8] = (uint8_t)(tuningData[1].ki>>8);
+  data_buffer[8] = (uint8_t)(tuningData[1].ki >> 8);
   data_buffer[9] = (uint8_t)(tuningData[1].ki);
-  data_buffer[10] = (uint8_t)(tuningData[1].kd>>8);
+  data_buffer[10] = (uint8_t)(tuningData[1].kd >> 8);
   data_buffer[11] = (uint8_t)(tuningData[1].kd);
-  data_buffer[12] = (uint8_t)(tuningData[2].kp>>8);
+  data_buffer[12] = (uint8_t)(tuningData[2].kp >> 8);
   data_buffer[13] = (uint8_t)(tuningData[2].kp);
-  data_buffer[14] = (uint8_t)(tuningData[2].ki>>8);
+  data_buffer[14] = (uint8_t)(tuningData[2].ki >> 8);
   data_buffer[15] = (uint8_t)(tuningData[2].ki);
-  data_buffer[16] = (uint8_t)(tuningData[2].kd>>8);
+  data_buffer[16] = (uint8_t)(tuningData[2].kd >> 8);
   data_buffer[17] = (uint8_t)(tuningData[2].kd);
   int16_t checksum_buffer = tuningData[0].checksum + tuningData[1].checksum + tuningData[2].checksum;
-  data_buffer[18] = (uint8_t)(checksum_buffer>>8);
-	data_buffer[19] = (uint8_t)(checksum_buffer);
+  data_buffer[18] = (uint8_t)(checksum_buffer >> 8);
+  data_buffer[19] = (uint8_t)(checksum_buffer);
 
-	for (int index = 0; index < 20; index++)
-	{
-		twi_writeTo(ARM_Address, (uint8_t*)data_buffer+index, 1, 1);
-	}
+  for (int index = 0; index < 20; index++)
+  {
+    twi_writeTo(ARM_Address, (uint8_t*)data_buffer + index, 1, 1);
+  }
 
   twi_writeTo(ARM_Address, &command, 1, 1);
   twi_writeTo(ARM_Address, &command, 1, 1);
@@ -499,13 +525,16 @@ uint8_t setPIDgain(void)
 
 void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp)
 {
-  uint8_t command = 0xFD;
+  uint8_t command = roll_tmp+pitch_tmp+throttle_tmp+yaw_tmp;
 
   twi_writeTo(ARM_Address, (uint8_t*)&roll_tmp, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&pitch_tmp, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&throttle_tmp, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&yaw_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&yaw_tmp, 1, 1);
 
+
+  command = 0xFD;
   twi_writeTo(ARM_Address, &command, 1, 1);
   twi_writeTo(ARM_Address, &command, 1, 1);
 }

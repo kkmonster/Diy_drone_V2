@@ -54,17 +54,17 @@
 //#define gy_diff 		0
 //#define gz_diff 		0
 
-#define Kp_yaw      3.5f
-#define Ki_yaw      0.001f
-#define Kd_yaw      0.0f
+//#define Kp_yaw      3.5f
+//#define Ki_yaw      0.001f
+//#define Kd_yaw      0.0f
 
-#define Kp_pitch		16.0f
-#define Ki_pitch    0.001f
-#define Kd_pitch    9.0f
+//#define Kp_pitch		16.0f
+//#define Ki_pitch    0.001f
+//#define Kd_pitch    9.0f
 
-#define Kp_roll	    Kp_pitch
-#define Ki_roll  		Ki_pitch
-#define Kd_roll  		Kd_pitch
+//#define Kp_roll	    Kp_pitch
+//#define Ki_roll  		Ki_pitch
+//#define Kd_roll  		Kd_pitch
 
 
 
@@ -77,7 +77,7 @@
 #define MPU6000_SPI &hspi1
 #define HMC5983_SPI &hspi1
 
-#define i2c_buffer_size 48
+#define i2c_buffer_size 128
 
 
 
@@ -111,6 +111,7 @@ int16_t rawGyrox_X = 1;
 int16_t rawGyrox_Y = 1;
 int16_t rawGyrox_Z = 1;
 
+uint8_t Flag_setPID_gain_success = 0;
 int16_t magneticDeclination = 0;
 float Ref_yaw=0, Ref_pitch=0, Ref_roll=0 ;
 int16_t q_yaw, q_pitch, q_roll;                               		// States value
@@ -123,8 +124,19 @@ float Del_yaw=0, Del_pitch=0, Del_roll=0;												// Delta states value for r
 float t_compensate = 0;
 float T_center_minus = 0;
 float y_roll=0, y_pitch=0, y0_roll=0, y0_pitch=0 ; 
-
 float rMat[3][3] = {0};
+
+float Kp_roll = 0;
+float Ki_roll = 0;
+float Kd_roll = 0;
+
+float Kp_pitch = 0;
+float Ki_pitch = 0;
+float Kd_pitch = 0;
+
+float Kp_yaw = 0;
+float Ki_yaw = 0;
+float Kd_yaw = 0;
 
 
 uint8_t  I2C_rx_buffer = 0;
@@ -170,6 +182,9 @@ float invSqrt(float x) ;
 void imuComputeRotationMatrix(void);
 float sq(float x);
 float constrain(float x, float lower_b, float upper_b);
+void getPIDgain(void);
+void getRCcommand(void);
+
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -217,7 +232,7 @@ int main(void)
 	
 	HAL_Delay(1000);
 	
-	HAL_I2C_Slave_Receive_DMA(&hi2c1, &I2C_rx_buffer, 1);
+	HAL_I2C_Slave_Receive_IT(&hi2c1, &I2C_rx_buffer, 1);
 	
   /* USER CODE END 2 */
 
@@ -281,12 +296,12 @@ void MX_I2C1_Init(void)
 
   hi2c1.Instance = I2C1;
   hi2c1.Init.Timing = 0x0000020B;
-  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.OwnAddress1 = 110;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLED;
   hi2c1.Init.OwnAddress2 = 0;
   hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLED;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_ENABLED;
   hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLED;
   HAL_I2C_Init(&hi2c1);
 
@@ -622,6 +637,10 @@ void PID_controller(void)
 	Error_roll 	= (float)ch1 * 0.30f  - ((float)q_roll/10.0f - roll_offset)	;
 	
   // protect  wind-up
+  if (Ki_roll < 0.001f)  Ki_roll = 0.001f;
+	if (Ki_pitch < 0.001f) Ki_pitch = 0.001f;
+	if (Ki_yaw < 0.001f)   Ki_yaw = 0.001f;
+	
 	Sum_Error_yaw =   constrain((Sum_Error_yaw   + (Error_yaw   /sampleFreq)), -250.0f / Ki_yaw,   250.0f / Ki_yaw) ;
 	Sum_Error_pitch = constrain((Sum_Error_pitch + (Errer_pitch /sampleFreq)), -250.0f / Ki_pitch, 250.0f / Ki_pitch) ;
 	Sum_Error_roll =  constrain((Sum_Error_roll  + (Error_roll  /sampleFreq)), -250.0f / Ki_roll,  250.0f / Ki_roll) ;
@@ -676,15 +695,15 @@ void Interrupt_call(void)
 		AHRS(); 
 		/* Controller */
 		PID_controller();
-	  watchdog = 10;
+	
     if (watchdog > 0) watchdog --;
 	
-		if((T_center < 50) || (watchdog == 0))		
+		if((T_center < 50) || (watchdog == 0) || Flag_setPID_gain_success == 0)		
 		{
             
-//			Sum_Error_yaw=0;
-//			Sum_Error_pitch=0;
-//			Sum_Error_roll=0;        
+			Sum_Error_yaw=0;
+			Sum_Error_pitch=0;
+			Sum_Error_roll=0;        
 			
 			motor_A=0;
 			motor_B=0;
@@ -862,11 +881,83 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
 	I2C_rx_data[I2C_rx_data_index] = I2C_rx_buffer;
 	
+	if (I2C_rx_data[I2C_rx_data_index] == 0XFE && I2C_rx_data[I2C_rx_data_index-1] == 0XFE &&  I2C_rx_data_index >= 20)
+	{
+		getPIDgain();
+	}
 	
+	if (I2C_rx_data[I2C_rx_data_index] == 0XFD && I2C_rx_data[I2C_rx_data_index-1] == 0XFD &&  I2C_rx_data_index >= 6)
+	{
+		getRCcommand();
+	}
 	
 	I2C_rx_data_index ++;
-	HAL_I2C_Slave_Receive_DMA(&hi2c1, &I2C_rx_buffer, 1);
+	if (I2C_rx_data_index == i2c_buffer_size) I2C_rx_data_index = 0;
+	HAL_I2C_Slave_Receive_IT(&hi2c1, &I2C_rx_buffer, 1);
 }
+
+void getPIDgain(void)
+{
+	  int16_t	Kp_roll_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-21])<<8 | I2C_rx_data[I2C_rx_data_index-20]);
+		int16_t	Ki_roll_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-19])<<8 | I2C_rx_data[I2C_rx_data_index-18]);
+		int16_t	Kd_roll_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-17])<<8 | I2C_rx_data[I2C_rx_data_index-16]);
+
+		int16_t	Kp_pitch_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-15])<<8 | I2C_rx_data[I2C_rx_data_index-14]);
+		int16_t	Ki_pitch_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-13])<<8 | I2C_rx_data[I2C_rx_data_index-12]);
+		int16_t	Kd_pitch_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-11])<<8 | I2C_rx_data[I2C_rx_data_index-10]);
+
+		int16_t	Kp_yaw_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-9])<<8 | I2C_rx_data[I2C_rx_data_index-8]);
+		int16_t	Ki_yaw_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-7])<<8 | I2C_rx_data[I2C_rx_data_index-6]);
+		int16_t	Kd_yaw_tmp = (((int16_t)I2C_rx_data[I2C_rx_data_index-5])<<8 | I2C_rx_data[I2C_rx_data_index-4]);
+		int16_t sum = Kp_roll_tmp + Ki_roll_tmp + Kd_roll_tmp + Kp_pitch_tmp + Ki_pitch_tmp + Kd_pitch_tmp + Kp_yaw_tmp + Ki_yaw_tmp + Kd_yaw_tmp;
+		int16_t	checksum_buffer =(((int16_t)I2C_rx_data[I2C_rx_data_index-3])<<8 | I2C_rx_data[I2C_rx_data_index-2]);
+	if ((checksum_buffer-6) == sum)
+	{
+		Kp_roll = (float)Kp_roll_tmp * 0.1f;
+		Ki_roll = (float)Ki_roll_tmp * 0.1f;
+		Kd_roll = (float)Kd_roll_tmp * 0.1f;
+
+		Kp_pitch = (float)Kp_pitch_tmp * 0.1f;
+		Ki_pitch = (float)Ki_pitch_tmp * 0.1f;
+		Kd_pitch = (float)Kd_pitch_tmp * 0.1f;
+
+		Kp_yaw = (float)Kp_yaw_tmp * 0.1f;
+		Ki_yaw = (float)Ki_yaw_tmp * 0.1f;
+		Kd_yaw = (float)Kd_yaw_tmp * 0.1f;
+
+		Flag_setPID_gain_success = 1;
+		
+	}else{
+		
+		Flag_setPID_gain_success = 0;
+		
+	}
+	
+	I2C_rx_data_index = 0;
+	HAL_I2C_Slave_Transmit_IT(&hi2c1,(uint8_t*)&checksum_buffer, 2);
+
+}
+
+void getRCcommand(void)
+{
+	
+	int8_t	roll_tmp = I2C_rx_data[I2C_rx_data_index-6];
+	int8_t	pitch_tmp = I2C_rx_data[I2C_rx_data_index-5];
+	int8_t	throttle_tmp = I2C_rx_data[I2C_rx_data_index-4];
+	int8_t	yaw_tmp = I2C_rx_data[I2C_rx_data_index-3];
+	int8_t	sum_tmp = I2C_rx_data[I2C_rx_data_index-2];
+	if (sum_tmp == (roll_tmp+pitch_tmp+throttle_tmp+yaw_tmp))
+	{
+		ch1 = roll_tmp;
+		ch2 = pitch_tmp;
+		ch3 = throttle_tmp;
+		ch4 = yaw_tmp;
+		watchdog = 1000;
+	}
+	
+	I2C_rx_data_index = 0;
+}
+
 /* USER CODE END 4 */
 
 #ifdef USE_FULL_ASSERT
