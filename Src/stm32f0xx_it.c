@@ -37,6 +37,7 @@
 
 /* USER CODE BEGIN 0 */
 extern void Interrupt_call(void);
+extern void fn_I2C_SlaveRxCpltCallback(void);
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -111,7 +112,7 @@ void I2C1_IRQHandler(void)
     HAL_I2C_EV_IRQHandler(&hi2c1);
   }
   /* USER CODE BEGIN I2C1_IRQn 1 */
-
+	fn_I2C_SlaveRxCpltCallback();
   /* USER CODE END I2C1_IRQn 1 */
 }
 
