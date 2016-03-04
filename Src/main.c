@@ -184,7 +184,7 @@ float sq(float x);
 float constrain(float x, float lower_b, float upper_b);
 void getPIDgain(void);
 void getRCcommand(void);
-
+void fn_I2C_SlaveRxCpltCallback(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -228,11 +228,10 @@ int main(void)
 	HAL_TIM_PWM_Start(&htim3,TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim3,TIM_CHANNEL_2);
 	
-	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
-	
-	HAL_Delay(1000);
+	//HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 	
 	HAL_I2C_Slave_Receive_IT(&hi2c1, &I2C_rx_buffer, 1);
+
 	
   /* USER CODE END 2 */
 
@@ -877,7 +876,7 @@ float invSqrt(float x)
     return 1.0f / sqrtf(x);
 }
 
-void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
+void fn_I2C_SlaveRxCpltCallback(void)
 {
 	I2C_rx_data[I2C_rx_data_index] = I2C_rx_buffer;
 	
@@ -893,6 +892,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
 	
 	I2C_rx_data_index ++;
 	if (I2C_rx_data_index == i2c_buffer_size) I2C_rx_data_index = 0;
+	
 	HAL_I2C_Slave_Receive_IT(&hi2c1, &I2C_rx_buffer, 1);
 }
 
@@ -934,7 +934,7 @@ void getPIDgain(void)
 	}
 	
 	I2C_rx_data_index = 0;
-	HAL_I2C_Slave_Transmit_IT(&hi2c1,(uint8_t*)&checksum_buffer, 2);
+	//HAL_I2C_Slave_Transmit_IT(&hi2c1,(uint8_t*)&checksum_buffer, 2);
 
 }
 
