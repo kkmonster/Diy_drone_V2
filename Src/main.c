@@ -426,7 +426,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(INT_MPU6000_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 2, 0);
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 1, 0);
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
 }
@@ -951,7 +951,7 @@ void getRCcommand(void)
 		ch2 = pitch_tmp;
 		ch3 = throttle_tmp;
 		ch4 = yaw_tmp;
-		watchdog = 1000;
+		watchdog = 200;
 		
 	}
 
