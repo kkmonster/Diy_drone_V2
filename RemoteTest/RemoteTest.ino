@@ -118,7 +118,7 @@ void setup()
   loadTrimData();
   delay(50);
 
-  int error = 20 ;
+  int error = 5 ;
   while (setPIDgain() != 1 && error > 0)
   {
     delay(5);
@@ -170,6 +170,8 @@ void Read_udp(void)
         tuningData[i] = tuningDataBuffer;
         saveTuningData(i);
 
+        if (tuningDataBuffer.yawPitchRoll == 0X03) setPIDgain();
+
         float kp = tuningDataBuffer.kp / 10.0f;
         float ki = tuningDataBuffer.ki / 10.0f;
         float kd = tuningDataBuffer.kd / 10.0f;
@@ -197,17 +199,15 @@ void Read_udp(void)
         //     Serial.println(string_tmp_1
 #endif
 
-        int error = 5 ;
-        while (setPIDgain() != 1 && error > 0)
-        {
-          delay(5);
-          error--;
+
+
+
 #ifdef Print_Debug
 
-          Serial.println("setPIDgain");
+        Serial.println("setPIDgain");
 
 #endif
-        }
+
 
       }
     }
@@ -323,8 +323,8 @@ void Read_udp(void)
         {
           // control //
 
-          sentControlcommand(controlData.roll + Trim_value[0] , controlData.pitch + Trim_value[1], controlData.throttle, controlData.yaw + Trim_value[2] );
-
+          //sentControlcommand(controlData.roll + Trim_value[0] , controlData.pitch + Trim_value[1], controlData.throttle, controlData.yaw + Trim_value[2] );
+          sentControlcommand(controlData.roll, controlData.pitch , controlData.throttle, controlData.yaw);
           memcpy(&controlData_prev, data, sizeof(ControlData));
 
 #ifdef Print_Debug
@@ -485,7 +485,7 @@ uint8_t setPIDgain(void)
   int16_t temp ;
   uint8_t command = 0XFE;
 
-  uint8_t data_buffer[20] = {0};
+  int8_t data_buffer[20] = {0};
 
   data_buffer[0] = (uint8_t)(tuningData[0].kp >> 8);
   data_buffer[1] = (uint8_t)(tuningData[0].kp);
@@ -505,7 +505,7 @@ uint8_t setPIDgain(void)
   data_buffer[15] = (uint8_t)(tuningData[2].ki);
   data_buffer[16] = (uint8_t)(tuningData[2].kd >> 8);
   data_buffer[17] = (uint8_t)(tuningData[2].kd);
-  int16_t checksum_buffer = tuningData[0].checksum + tuningData[1].checksum + tuningData[2].checksum;
+  int16_t checksum_buffer = tuningData[0].kp + tuningData[0].ki + tuningData[0].kd + tuningData[1].kp + tuningData[1].ki + tuningData[1].kd + tuningData[2].kp + tuningData[2].ki + tuningData[2].kd ;
   data_buffer[18] = (uint8_t)(checksum_buffer >> 8);
   data_buffer[19] = (uint8_t)(checksum_buffer);
 
@@ -517,24 +517,23 @@ uint8_t setPIDgain(void)
   twi_writeTo(ARM_Address, &command, 1, 1);
   twi_writeTo(ARM_Address, &command, 1, 1);
 
-  Wire.requestFrom(ARM_Address, 1);
-  temp = Wire.read() << 8 | Wire.read();
+  // Wire.requestFrom(ARM_Address, 1);
+  // temp = Wire.read() << 8 | Wire.read();
 
-  return temp == checksum_buffer;
+  return 0;
 }
 
 void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp)
 {
-  uint8_t command = roll_tmp+pitch_tmp+throttle_tmp+yaw_tmp;
+  int8_t command = roll_tmp + pitch_tmp + throttle_tmp + yaw_tmp;
 
   twi_writeTo(ARM_Address, (uint8_t*)&roll_tmp, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&pitch_tmp, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&throttle_tmp, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&yaw_tmp, 1, 1);
-  twi_writeTo(ARM_Address, (uint8_t*)&yaw_tmp, 1, 1);
-
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
 
   command = 0xFD;
-  twi_writeTo(ARM_Address, &command, 1, 1);
-  twi_writeTo(ARM_Address, &command, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
 }

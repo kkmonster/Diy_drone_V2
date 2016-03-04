@@ -34,8 +34,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f0xx_hal.h"
 
-extern DMA_HandleTypeDef hdma_i2c1_rx;
-
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
@@ -83,23 +81,8 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
 
     /* Peripheral clock enable */
     __I2C1_CLK_ENABLE();
-
-    /* Peripheral DMA init*/
-  
-    hdma_i2c1_rx.Instance = DMA1_Channel3;
-    hdma_i2c1_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
-    hdma_i2c1_rx.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma_i2c1_rx.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_i2c1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-    hdma_i2c1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-    hdma_i2c1_rx.Init.Mode = DMA_NORMAL;
-    hdma_i2c1_rx.Init.Priority = DMA_PRIORITY_MEDIUM;
-    HAL_DMA_Init(&hdma_i2c1_rx);
-
-    __HAL_LINKDMA(hi2c,hdmarx,hdma_i2c1_rx);
-
   /* Peripheral interrupt init*/
-    HAL_NVIC_SetPriority(I2C1_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(I2C1_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(I2C1_IRQn);
   /* USER CODE BEGIN I2C1_MspInit 1 */
 
@@ -124,9 +107,6 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* hi2c)
     PF1-OSC_OUT     ------> I2C1_SCL 
     */
     HAL_GPIO_DeInit(GPIOF, GPIO_PIN_0|GPIO_PIN_1);
-
-    /* Peripheral DMA DeInit*/
-    HAL_DMA_DeInit(hi2c->hdmarx);
 
     /* Peripheral interrupt DeInit*/
     HAL_NVIC_DisableIRQ(I2C1_IRQn);
