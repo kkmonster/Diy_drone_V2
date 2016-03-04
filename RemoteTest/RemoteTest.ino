@@ -116,26 +116,20 @@ void setup()
 
   loadTuningData();
   loadTrimData();
-  delay(50);
+  delay(1000);
 
-  int error = 5 ;
-  while (setPIDgain() != 1 && error > 0)
-  {
-    delay(5);
-    error--;
+  setPIDgain();
+
 #ifdef Print_Debug
 
     Serial.println("setPIDgain");
 
 #endif
-  }
+  
 
-  if (error > 0)
-  {
-    ticker_DEGUG.attach_ms(500, blink);
-  } else {
-    ticker_DEGUG.attach_ms(50, blink);
-  }
+
+	ticker_DEGUG.attach_ms(1000, blink);
+
 
 }
 
@@ -326,7 +320,7 @@ void Read_udp(void)
           //sentControlcommand(controlData.roll + Trim_value[0] , controlData.pitch + Trim_value[1], controlData.throttle, controlData.yaw + Trim_value[2] );
           sentControlcommand(controlData.roll, controlData.pitch , controlData.throttle, controlData.yaw);
           memcpy(&controlData_prev, data, sizeof(ControlData));
-
+          blink();
 #ifdef Print_Debug
           output = String("Roll ") + intToString(controlData.roll, 4) + ", Pitch " + intToString(controlData.pitch, 4) + ", Throttle " + intToString(controlData.throttle, 3) + ", Yaw " + intToString(controlData.yaw, 4);
 

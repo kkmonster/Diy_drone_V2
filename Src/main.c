@@ -46,9 +46,9 @@
 #define roll_offset    0.0f     
 #define pitch_offset   0.0f
 
-#define gx_diff 		-193
-#define gy_diff 		80
-#define gz_diff 		-70
+#define gx_diff 		-692
+#define gy_diff 		67
+#define gz_diff 		-55
 
 //#define gx_diff 		0
 //#define gy_diff 		0
@@ -568,9 +568,9 @@ void Read_MPU6000(void)
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
 	  
-//		a = Smooth_filter(0.1f, rawGyrox_X, a);
-//		b = Smooth_filter(0.1f, rawGyrox_Y, b);	
-//		c = Smooth_filter(0.1f, rawGyrox_Z, c);
+		a = Smooth_filter(0.1f, rawGyrox_X, a);
+		b = Smooth_filter(0.1f, rawGyrox_Y, b);	
+		c = Smooth_filter(0.1f, rawGyrox_Z, c);
 	
 		rawGyrox_X -= gx_diff;
 		rawGyrox_Y -= gy_diff;
@@ -613,27 +613,25 @@ void PID_controller(void)
      
 	T_center_buffer    = (float)ch3 *   18.0f;
 	
-	T_center = Smooth_filter(0.4f, T_center_buffer, T_center);
+	T_center = Smooth_filter(0.3f, T_center_buffer, T_center);
 
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 	
-	Error_yaw 	= -(float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
-	Errer_pitch = (float)ch2 * -0.30f - ((float)q_pitch/10.0f - pitch_offset)	;
-	Error_roll 	= (float)ch1 * 0.30f  - ((float)q_roll/10.0f - roll_offset)	;
+	Error_yaw 	= (float)ch4 * 2.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+	Errer_pitch = -(float)ch2 * 0.30f - ((float)q_pitch*0.1f - pitch_offset)	;
+	Error_roll 	= -(float)ch1 * 0.30f  - ((float)q_roll*0.1f - roll_offset)	;
 	
   // protect  wind-up
-  if (Ki_roll < 0.001f)  Ki_roll = 0.001f;
-	if (Ki_pitch < 0.001f) Ki_pitch = 0.001f;
-	if (Ki_yaw < 0.001f)   Ki_yaw = 0.001f;
+
 	
-	Sum_Error_yaw =   constrain((Sum_Error_yaw   + (Error_yaw   /sampleFreq)), -250.0f / Ki_yaw,   250.0f / Ki_yaw) ;
-	Sum_Error_pitch = constrain((Sum_Error_pitch + (Errer_pitch /sampleFreq)), -250.0f / Ki_pitch, 250.0f / Ki_pitch) ;
-	Sum_Error_roll =  constrain((Sum_Error_roll  + (Error_roll  /sampleFreq)), -250.0f / Ki_roll,  250.0f / Ki_roll) ;
+	Sum_Error_yaw =   constrain((Sum_Error_yaw   + (Error_yaw   /sampleFreq)), -250.0f , 250.0f) ;
+	Sum_Error_pitch = constrain((Sum_Error_pitch + (Errer_pitch /sampleFreq)), -250.0f , 250.0f) ;
+	Sum_Error_roll =  constrain((Sum_Error_roll  + (Error_roll  /sampleFreq)), -250.0f , 250.0f) ;
 	
 	
 	D_Error_yaw =  (Error_yaw-Buf_D_Error_yaw)    *sampleFreq ;
 	D_Error_pitch =(Errer_pitch-Buf_D_Errer_pitch)*sampleFreq;
-	D_Error_roll = (Error_roll-Buf_D_Error_roll)*sampleFreq;
+	D_Error_roll = (Error_roll-Buf_D_Error_roll)  *sampleFreq;
 
 	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	  * Sum_Error_yaw)   + constrain((Kd_yaw * D_Error_yaw), -300, 300);
 	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch) + constrain((Kd_pitch * D_Error_pitch), -300, 300);
@@ -912,17 +910,17 @@ void getPIDgain(void)
 
 	if (checksum_buffer == sum)
 	{
-		Kp_roll = (float)Kp_roll_tmp * 0.02f;
-		Ki_roll = (float)Ki_roll_tmp * 0.02f;
-		Kd_roll = (float)Kd_roll_tmp * 0.02f;
+		Kp_roll = (float)Kp_roll_tmp * 0.03f;
+		Ki_roll = (float)Ki_roll_tmp * 0.03f;
+		Kd_roll = (float)Kd_roll_tmp * 0.03f;
 
-		Kp_pitch = (float)Kp_pitch_tmp * 0.02f;
-		Ki_pitch = (float)Ki_pitch_tmp * 0.02f;
-		Kd_pitch = (float)Kd_pitch_tmp * 0.02f;
+		Kp_pitch = (float)Kp_pitch_tmp * 0.03f;
+		Ki_pitch = (float)Ki_pitch_tmp * 0.03f;
+		Kd_pitch = (float)Kd_pitch_tmp * 0.03f;
 
-		Kp_yaw = (float)Kp_yaw_tmp * 0.02f;
-		Ki_yaw = (float)Ki_yaw_tmp * 0.02f;
-		Kd_yaw = (float)Kd_yaw_tmp * 0.02f;
+		Kp_yaw = (float)Kp_yaw_tmp * 0.03f;
+		Ki_yaw = (float)Ki_yaw_tmp * 0.03f;
+		Kd_yaw = (float)Kd_yaw_tmp * 0.03f;
 
 		Flag_setPID_gain_success = 1;
 		
