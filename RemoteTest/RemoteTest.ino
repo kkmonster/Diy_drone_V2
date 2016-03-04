@@ -2,9 +2,10 @@
 #include <Ticker.h>
 #include <WiFiUDP.h>
 #include <EEPROM.h>
+#include <Wire.h>
 
 #define DEFAULT_SSID_LENGTH 16
-
+#define ARM_Address 110
 #define LED 16
 #define Print_Debug
 
@@ -58,6 +59,8 @@ String floatToString(float value, int length, int decimalPalces);
 String intToString(int value, int length);
 String hexToString(byte value);
 void blink(void);
+uint8_t setPIDgain(void);
+void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp);
 void Read_udp(void);
 
 
@@ -92,6 +95,9 @@ void setup()
   udp.begin(localPort);
   delay(50);
 
+  Wire.begin();
+  Wire.setClock(400000);
+
 #ifdef Print_Debug
 
   Serial.println("");
@@ -110,6 +116,13 @@ void setup()
 
   loadTuningData();
 	loadTrimData();
+  delay(50);
+
+	while (setPIDgain() != 1)
+	{
+		delay(5);
+	}
+
   ticker_DEGUG.attach_ms(500, blink);
 }
 
@@ -274,7 +287,7 @@ void Read_udp(void)
 					trim_tmp_0[1] = controlData_prev.pitch;
 					trim_tmp_0[2] = controlData_prev.yaw;
 	 				saveTrimData(trim_tmp_0);
-
+	 				memcpy(&Trim_value, &trim_tmp_0, 3);
 
 #ifdef Print_Debug
           Serial.println("Trim");
@@ -283,7 +296,10 @@ void Read_udp(void)
         else
         {
         	// control //
-					memcpy(&controlData_prev, data, sizeof(ControlData));
+
+        	sentControlcommand(controlData.roll+Trim_value[0] , controlData.pitch+Trim_value[1], controlData.throttle, controlData.yaw+Trim_value[2] );
+
+  				memcpy(&controlData_prev, data, sizeof(ControlData));
 
 #ifdef Print_Debug
           output = String("Roll ") + intToString(controlData.roll, 4) + ", Pitch " + intToString(controlData.pitch, 4) + ", Throttle " + intToString(controlData.throttle, 3) + ", Yaw " + intToString(controlData.yaw, 4);
@@ -436,4 +452,60 @@ void blink(void)
   static int8_t led = 0;
   led = 1 - led;
   digitalWrite(LED, led);
+}
+
+uint8_t setPIDgain(void)
+{
+  int16_t temp ;
+  uint8_t command = 0XFE;
+
+  uint8_t data_buffer[20] ={0};
+
+  data_buffer[0] = (uint8_t)(tuningData[0].kp>>8);
+  data_buffer[1] = (uint8_t)(tuningData[0].kp);
+  data_buffer[2] = (uint8_t)(tuningData[0].ki>>8);
+  data_buffer[3] = (uint8_t)(tuningData[0].ki);
+  data_buffer[4] = (uint8_t)(tuningData[0].kd>>8);
+  data_buffer[5] = (uint8_t)(tuningData[0].kd);
+  data_buffer[6] = (uint8_t)(tuningData[1].kp>>8);
+  data_buffer[7] = (uint8_t)(tuningData[1].kp);
+  data_buffer[8] = (uint8_t)(tuningData[1].ki>>8);
+  data_buffer[9] = (uint8_t)(tuningData[1].ki);
+  data_buffer[10] = (uint8_t)(tuningData[1].kd>>8);
+  data_buffer[11] = (uint8_t)(tuningData[1].kd);
+  data_buffer[12] = (uint8_t)(tuningData[2].kp>>8);
+  data_buffer[13] = (uint8_t)(tuningData[2].kp);
+  data_buffer[14] = (uint8_t)(tuningData[2].ki>>8);
+  data_buffer[15] = (uint8_t)(tuningData[2].ki);
+  data_buffer[16] = (uint8_t)(tuningData[2].kd>>8);
+  data_buffer[17] = (uint8_t)(tuningData[2].kd);
+  int16_t checksum_buffer = tuningData[0].checksum + tuningData[1].checksum + tuningData[2].checksum;
+  data_buffer[18] = (uint8_t)(checksum_buffer>>8);
+	data_buffer[19] = (uint8_t)(checksum_buffer);
+
+	for (int index = 0; index < 20; index++)
+	{
+		twi_writeTo(ARM_Address, (uint8_t*)data_buffer+index, 1, 1);
+	}
+
+  twi_writeTo(ARM_Address, &command, 1, 1);
+  twi_writeTo(ARM_Address, &command, 1, 1);
+
+  Wire.requestFrom(ARM_Address, 1);
+  temp = Wire.read() << 8 | Wire.read();
+
+  return temp == checksum_buffer;
+}
+
+void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp)
+{
+  uint8_t command = 0xFD;
+
+  twi_writeTo(ARM_Address, (uint8_t*)&roll_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&pitch_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&throttle_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&yaw_tmp, 1, 1);
+
+  twi_writeTo(ARM_Address, &command, 1, 1);
+  twi_writeTo(ARM_Address, &command, 1, 1);
 }
