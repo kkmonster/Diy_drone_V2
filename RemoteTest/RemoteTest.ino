@@ -70,6 +70,8 @@ IPAddress subnet(255, 255, 255, 255);
 
 void setup()
 {
+  delay(1000);
+
   WiFi.mode(WIFI_STA);
   delay(50);
 
@@ -80,16 +82,17 @@ void setup()
   delay(200);
 
   Serial.begin(115200);
-  sprintf(accessPointName, "B-Drone-%lu", ESP.getChipId());
+
+  // WiFi.softAPConfig(local_ip, gateway, subnet);
+  // delay(50);
+
+  sprintf(accessPointName, "BDrone-%lu", ESP.getChipId());
   WiFi.softAP(accessPointName, "12345678");
   delay(50);
   accessPointName[DEFAULT_SSID_LENGTH - 1] = {'\0'};
 
 
   WiFi.mode(WIFI_AP_STA);
-  delay(50);
-
-  WiFi.softAPConfig(local_ip, gateway, subnet);
   delay(50);
 
   udp.begin(localPort);
