@@ -40,15 +40,12 @@
 #define Compass_SENSITIVITY       	1090.0f
 #define M_PI                        3.14159265359f	    
 #define M_PIf       								3.14159265358979323846f
-#define sampleFreq                  500.0f     			    // 200 hz sample rate!   
+#define sampleFreq                  250.0f     			    // 200 hz sample rate!   
 #define limmit_I                    300.0f     
 
 #define roll_offset    0.0f     
 #define pitch_offset   0.0f
 
-#define gx_diff 		-692
-#define gy_diff 		67
-#define gz_diff 		-55
 
 //#define gx_diff 		0
 //#define gy_diff 		0
@@ -77,7 +74,7 @@
 #define MPU6000_SPI &hspi1
 #define HMC5983_SPI &hspi1
 
-#define i2c_buffer_size 30
+#define i2c_buffer_size 96
 
 
 
@@ -137,6 +134,9 @@ volatile float Kp_yaw = 0;
 volatile float Ki_yaw = 0;
 volatile float Kd_yaw = 0;
 
+int16_t gx_diff = -102;
+int16_t gy_diff = 51;
+int16_t gz_diff = -93;
 
 volatile uint8_t  I2C_rx_buffer = 0;
 volatile uint8_t  I2C_rx_data[i2c_buffer_size] = {0};
@@ -147,10 +147,11 @@ int16_t xxx = 0;
 /* USER CODE for SPPM Receiver  */
 
 volatile uint8_t	index= 0 ;
-volatile int16_t	ch1=0,ch2=0,ch3=0,ch4=0;                 
+volatile int16_t	ch1=0,ch2=0,ch3=0,ch4=0; 
+volatile int16_t	_ch1=0,_ch2=0,_ch3=0,_ch4=0;      
 volatile int16_t	motor_A=0, motor_B=0, motor_C=0, motor_D=0 ;// Motors output value 
 uint8_t rx_tmp[14] = {0};
-volatile int16_t a, b, c, d;
+volatile int16_t a, b, c, d, e, f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -180,9 +181,11 @@ float invSqrt(float x) ;
 void imuComputeRotationMatrix(void);
 float sq(float x);
 float constrain(float x, float lower_b, float upper_b);
-void getPIDgain(void);
-void getRCcommand(void);
+void getPIDgain(uint8_t I2C_rx_data_index);
+void getRCcommand(uint8_t I2C_rx_data_index);
 void fn_I2C_SlaveRxCpltCallback(void);
+void readCommand (void);
+
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -225,12 +228,18 @@ int main(void)
 	HAL_TIM_PWM_Start(&htim3,TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim3,TIM_CHANNEL_2);
 	
-	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
-	
-	HAL_I2C_Slave_Receive_IT(&hi2c1, (uint8_t*)(I2C_rx_data+I2C_rx_data_index), 1);
 
 	
-  /* USER CODE END 2 */
+	HAL_I2C_Slave_Receive_IT(&hi2c1, (uint8_t*)(I2C_rx_data+I2C_rx_data_index), 1);
+  HAL_Delay(10);
+	
+	a = gx_diff;
+	b = gy_diff;
+	c = gx_diff;
+	
+	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+  
+	/* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -426,7 +435,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(INT_MPU6000_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 1, 0);
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 2, 0);
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
 }
@@ -496,7 +505,7 @@ void initMPU6000(void)
     ENABLE_MPU6000;
     tmp = MPU6000_SMPLRT_DIV;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // Accel & Gyro Sample Rate 200 Hz
-    tmp = 0x01;
+    tmp = 0x03;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -564,13 +573,20 @@ void Read_MPU6000(void)
 		rawAccx_X  =  ((int16_t)rx_tmp[0])<<8 | (int16_t)rx_tmp[1];
 		rawAccx_Y  =  ((int16_t)rx_tmp[2])<<8 | (int16_t)rx_tmp[3];
 		rawAccx_Z  =  ((int16_t)rx_tmp[4])<<8 | (int16_t)rx_tmp[5];
-		rawGyrox_X = ((int16_t)rx_tmp[8])<<8  | (int16_t)rx_tmp[9];
+		rawGyrox_X = ((int16_t)rx_tmp[8] )<<8 | (int16_t)rx_tmp[9];
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
-	  
-		a = Smooth_filter(0.1f, rawGyrox_X, a);
-		b = Smooth_filter(0.1f, rawGyrox_Y, b);	
-		c = Smooth_filter(0.1f, rawGyrox_Z, c);
+	
+	  if (T_center < 30) 
+		{
+			a = Smooth_filter(0.01f, rawGyrox_X, a);
+			b = Smooth_filter(0.01f, rawGyrox_Y, b);	
+			c = Smooth_filter(0.01f, rawGyrox_Z, c);
+		}
+	
+//		d = Smooth_filter(0.1f, rawAccx_X, d);
+//		e = Smooth_filter(0.1f, rawAccx_Y, e);	
+//		f = Smooth_filter(0.1f, rawAccx_Z, f);
 	
 		rawGyrox_X -= gx_diff;
 		rawGyrox_Y -= gy_diff;
@@ -671,6 +687,8 @@ void Drive_motor_output(void)
 
 void Interrupt_call(void)
 {
+	static uint8_t x;
+		
 			/* Read data from sensor */
 		Read_MPU6000();
 		Read_HMC5983();
@@ -680,10 +698,15 @@ void Interrupt_call(void)
 		PID_controller();
 
     if (watchdog > 0) watchdog --;
-		if((T_center < 50) || (watchdog == 0))		
+		if((T_center < 30) || (watchdog == 0))		
 		//if((T_center < 50) || (watchdog == 0) || Flag_setPID_gain_success == 0)		
 		{
             
+			gx_diff = a;
+			gy_diff = b;
+			gx_diff = c;
+	
+			
 			Sum_Error_yaw=0;
 			Sum_Error_pitch=0;
 			Sum_Error_roll=0;        
@@ -692,14 +715,21 @@ void Interrupt_call(void)
 			motor_B=0;
 			motor_C=0;
 			motor_D=0;
-		}
-        
+		}  
 	Drive_motor_output(); 
+		
+		
+		if(x == 5)
+		{
+			readCommand();
+			x = 0;
+		}
+		x++;
 }
 
 void AHRS()
 {
-	  float dt = 0.002f; 
+	  float dt = 0.004f; 
 		float gx = (((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float gy = (((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float gz = (((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
@@ -866,33 +896,12 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
 	I2C_rx_data_index = I2C_rx_data_index + 1;	
 
-	if (I2C_rx_data_index >= 7)
-	{
-		uint8_t command_code = 0xfd ;
-		if (I2C_rx_data[I2C_rx_data_index-2] == command_code && I2C_rx_data[I2C_rx_data_index-1] == command_code )
-		{
-			getRCcommand();
-			I2C_rx_data_index = 0;
-		}
-		uint8_t command_code2 = 0xfe ;
-		if(I2C_rx_data_index >= 22)
-		{
-			if (I2C_rx_data[I2C_rx_data_index-2] == command_code2 && I2C_rx_data[I2C_rx_data_index-1] == command_code2)
-			{
-				getPIDgain();
-				I2C_rx_data_index = 0;
-			} 
-		}
-	}
-	
-
-	
 	if (I2C_rx_data_index == i2c_buffer_size) I2C_rx_data_index = 0;
 	HAL_I2C_Slave_Receive_IT(&hi2c1, (uint8_t*)(I2C_rx_data + I2C_rx_data_index), 1);
 
 }
 
-void getPIDgain(void)
+void getPIDgain(uint8_t I2C_rx_data_index)
 {
 	  int16_t Kp_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-22]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-21]; 
 		int16_t	Ki_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-20]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-19];
@@ -935,7 +944,7 @@ void getPIDgain(void)
 
 }
 
-void getRCcommand(void)
+void getRCcommand(uint8_t I2C_rx_data_index)
 {
 	
 	int8_t	roll_tmp     = (int8_t)I2C_rx_data[I2C_rx_data_index-7];  
@@ -957,6 +966,33 @@ void getRCcommand(void)
 
 }
 
+
+void readCommand (void)
+{
+	if (I2C_rx_data_index >= 7)
+	{
+		for (uint8_t count = I2C_rx_data_index ; count > 0 ; count--)
+		{
+			uint8_t command_code = 0xfd ;
+			if (I2C_rx_data[count-2] == command_code && I2C_rx_data[count-1] == command_code )
+			{
+				getRCcommand(count);
+				I2C_rx_data_index = 0;
+				break;
+			}
+			uint8_t command_code2 = 0xfe ;
+			if(count >= 22)
+			{
+				if (I2C_rx_data[count-2] == command_code2 && I2C_rx_data[count-1] == command_code2)
+				{
+					getPIDgain(count);
+					I2C_rx_data_index = 0;
+					break;
+				} 
+			}
+		}
+	}
+}
 /* USER CODE END 4 */
 
 #ifdef USE_FULL_ASSERT
