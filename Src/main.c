@@ -34,6 +34,10 @@
 #include "stm32f0xx_hal.h"
 
 /* USER CODE BEGIN Includes */
+
+//#define MadgwickAHRS   // choose only one "MadgwickAHRS" or "MahonyAHRS"
+#define MahonyAHRS
+
 #define beta                        0.1f     
 #define ACCELEROMETER_SENSITIVITY   8192.0f  
 #define GYROSCOPE_SENSITIVITY       65.5f  
@@ -46,7 +50,10 @@
 #define roll_offset    0.0f     
 #define pitch_offset   0.0f
 
-
+#define debug_1_set		HAL_GPIO_WritePin(debug_1_GPIO_Port, debug_1_Pin, GPIO_PIN_SET)
+#define debug_1_reset HAL_GPIO_WritePin(debug_1_GPIO_Port, debug_1_Pin, GPIO_PIN_RESET)  
+#define debug_2_set   HAL_GPIO_WritePin(debug_2_GPIO_Port, debug_2_Pin, GPIO_PIN_SET)
+#define debug_2_reset HAL_GPIO_WritePin(debug_2_GPIO_Port, debug_2_Pin, GPIO_PIN_RESET)
 //#define gx_diff 		0
 //#define gy_diff 		0
 //#define gz_diff 		0
@@ -134,9 +141,12 @@ volatile float Kp_yaw = 0;
 volatile float Ki_yaw = 0;
 volatile float Kd_yaw = 0;
 
-int16_t gx_diff = -102;
-int16_t gy_diff = 51;
-int16_t gz_diff = -93;
+int16_t gx_diff = 0;
+int16_t gy_diff = 0;
+int16_t gz_diff = 0;
+int16_t ax_diff = 0;
+int16_t ay_diff = 0;
+int16_t az_diff = 0;
 
 volatile uint8_t  I2C_rx_buffer = 0;
 volatile uint8_t  I2C_rx_data[i2c_buffer_size] = {0};
@@ -151,7 +161,8 @@ volatile int16_t	ch1=0,ch2=0,ch3=0,ch4=0;
 volatile int16_t	_ch1=0,_ch2=0,_ch3=0,_ch4=0;      
 volatile int16_t	motor_A=0, motor_B=0, motor_C=0, motor_D=0 ;// Motors output value 
 uint8_t rx_tmp[14] = {0};
-volatile int16_t a, b, c, d, e, f;
+float T_center_buffer = 0;
+volatile float a, b, c, d, e, f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -239,7 +250,7 @@ int main(void)
 	
 	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   
-	/* USER CODE END 2 */
+  /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -249,6 +260,15 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
+    if (watchdog > 0) watchdog --;
+		if(watchdog == 0)		
+		{
+			TIM2->CCR1 = 0 ;
+			TIM2->CCR2 = 0 ;
+			TIM3->CCR1 = 0 ;
+			TIM3->CCR2 = 0 ;
+		}  		
+		HAL_Delay(10);
 //    motor_A = 100;
 //		Drive_motor_output(); 
 //		HAL_Delay(10);
@@ -421,6 +441,9 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, CS_MHC5983_Pin|CS_MPU6000_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, debug_2_Pin|debug_1_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pins : CS_MHC5983_Pin CS_MPU6000_Pin */
   GPIO_InitStruct.Pin = CS_MHC5983_Pin|CS_MPU6000_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -433,6 +456,13 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(INT_MPU6000_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : debug_2_Pin debug_1_Pin */
+  GPIO_InitStruct.Pin = debug_2_Pin|debug_1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI4_15_IRQn, 2, 0);
@@ -577,20 +607,22 @@ void Read_MPU6000(void)
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
 	
-	  if (T_center < 30) 
+	  if (T_center_buffer < 30) 
 		{
 			a = Smooth_filter(0.01f, rawGyrox_X, a);
 			b = Smooth_filter(0.01f, rawGyrox_Y, b);	
 			c = Smooth_filter(0.01f, rawGyrox_Z, c);
+			d = Smooth_filter(0.01f, rawGyrox_X, d);
+			e = Smooth_filter(0.01f, rawGyrox_Y, e);	
+			
 		}
-	
-//		d = Smooth_filter(0.1f, rawAccx_X, d);
-//		e = Smooth_filter(0.1f, rawAccx_Y, e);	
-//		f = Smooth_filter(0.1f, rawAccx_Z, f);
 	
 		rawGyrox_X -= gx_diff;
 		rawGyrox_Y -= gy_diff;
 		rawGyrox_Z -= gz_diff;
+		rawGyrox_X -= ax_diff;
+		rawGyrox_Y -= ay_diff;
+
 }
 
 void Read_HMC5983(void)
@@ -622,7 +654,7 @@ void Read_HMC5983(void)
 }
 void PID_controller(void)
 {
-	static float T_center_buffer;
+
 	float Buf_D_Error_yaw   =Error_yaw;
 	float Buf_D_Errer_pitch =Errer_pitch;
 	float Buf_D_Error_roll  =Error_roll; 
@@ -633,7 +665,7 @@ void PID_controller(void)
 
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 	
-	Error_yaw 	= (float)ch4 * 2.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+	Error_yaw 	= (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
 	Errer_pitch = -(float)ch2 * 0.30f - ((float)q_pitch*0.1f - pitch_offset)	;
 	Error_roll 	= -(float)ch1 * 0.30f  - ((float)q_roll*0.1f - roll_offset)	;
 	
@@ -687,7 +719,8 @@ void Drive_motor_output(void)
 
 void Interrupt_call(void)
 {
-	static uint8_t x;
+	static uint8_t check ;
+	debug_1_set;
 		
 			/* Read data from sensor */
 		Read_MPU6000();
@@ -698,35 +731,127 @@ void Interrupt_call(void)
 		PID_controller();
 
     if (watchdog > 0) watchdog --;
-		if((T_center < 30) || (watchdog == 0))		
+		if((T_center_buffer < 30) || (watchdog == 0))		
 		//if((T_center < 50) || (watchdog == 0) || Flag_setPID_gain_success == 0)		
 		{
             
 			gx_diff = a;
 			gy_diff = b;
 			gx_diff = c;
-	
+			if (check == 0)
+			{	
+				ax_diff = d;
+				ay_diff = e;
+			}
 			
 			Sum_Error_yaw=0;
 			Sum_Error_pitch=0;
-			Sum_Error_roll=0;        
+			Sum_Error_roll=0;         
 			
 			motor_A=0;
 			motor_B=0;
 			motor_C=0;
 			motor_D=0;
-		}  
+		}else{
+			check = 1;
+		}
 	Drive_motor_output(); 
 		
-		
-		if(x == 5)
-		{
-			readCommand();
-			x = 0;
-		}
-		x++;
+		debug_1_reset;
 }
+#ifdef MadgwickAHRS
+void AHRS()
+{
+	  float dt = 0.004f; 
+		float gx = (((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
+		float gy = (((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
+		float gz = (((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
+		float ax = ((float)rawAccx_X)/ACCELEROMETER_SENSITIVITY;
+		float ay = ((float)rawAccx_Y)/ACCELEROMETER_SENSITIVITY;
+		float az = ((float)rawAccx_Z)/ACCELEROMETER_SENSITIVITY;
+    float my =-((float)rawMagx_X)/Compass_SENSITIVITY;
+		float mx =-((float)rawMagx_Y)/Compass_SENSITIVITY;
+		float mz =-((float)rawMagx_Z)/Compass_SENSITIVITY;
+	
+//		gx = 0;
+//		gy = 0;
+//		gz = 0;
+//		ax = 0;
+//		ay = 0;
+//		az = 0;
+//    mx = ((float)rawMagx_X)/Compass_SENSITIVITY;
+//		my = ((float)rawMagx_Y)/Compass_SENSITIVITY;
+//		mz = ((float)rawMagx_Z)/Compass_SENSITIVITY;
 
+
+    float Norm;
+
+
+
+    float q1_dot = 0.5 * (-q2 * gx - q3 * gy - q4 * gz);
+		float q2_dot = 0.5 * ( q1 * gx + q3 * gz - q4 * gy);
+		float q3_dot = 0.5 * ( q1 * gy - q2 * gz + q4 * gx);
+		float q4_dot = 0.5 * ( q1 * gz + q2 * gy - q3 * gx);
+
+		if(!((ax == 0) && (ay == 0) && (az == 0))) 
+		{
+			// Normalise 
+			Norm = sqrtf(ax * ax + ay * ay + az * az);
+			ax /= Norm;
+			ay /= Norm;
+			az /= Norm;   
+
+			float _2q1 = 2 * q1;
+			float _2q2 = 2 * q2;
+			float _2q3 = 2 * q3;
+			float _2q4 = 2 * q4;
+			float _4q1 = 4 * q1;
+			float _4q2 = 4 * q2;
+			float _4q3 = 4 * q3;
+			float _8q2 = 8 * q2;
+			float _8q3 = 8 * q3;
+			float q1q1 = q1 * q1;
+			float q2q2 = q2 * q2;
+			float q3q3 = q3 * q3;
+			float q4q4 = q4 * q4;
+			// Gradient decent 
+			float s1 = _4q1 * q3q3 + _2q4 * ax + _4q1 * q2q2 - _2q2 * ay;
+			float s2 = _4q2 * q4q4 - _2q4 * ax + 4 * q1q1 * q2 - _2q1 * ay - _4q2 + _8q2 * q2q2 + _8q2 * q3q3 + _4q2 * az;
+			float s3 = 4 * q1q1 * q3 + _2q1 * ax + _4q3 * q4q4 - _2q4 * ay - _4q3 + _8q3 * q2q2 + _8q3 * q3q3 + _4q3 * az;
+			float s4 = 4 * q2q2 * q4 - _2q2 * ax + 4 * q3q3 * q4 - _2q3 * ay;
+			// Normalise 
+			Norm = sqrtf(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4); // normalise step magnitude
+			s1 /= Norm;
+			s2 /= Norm;
+			s3 /= Norm;
+			s4 /= Norm;
+			// compensate acc
+			q1_dot -= (beta * s1);
+			q2_dot -= (beta * s2);
+			q3_dot -= (beta * s3);
+			q4_dot -= (beta * s4);
+		}
+		// Integrate 
+		q1 += q1_dot / sampleFreq;
+		q2 += q2_dot / sampleFreq;
+		q3 += q3_dot / sampleFreq;
+		q4 += q4_dot / sampleFreq;
+		// Normalise
+		Norm = sqrtf(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4 );
+		q1 /= Norm;
+		q2 /= Norm;
+		q3 /= Norm;
+		q4 /= Norm;		
+		/* Compute pitch/roll angles */
+
+    q_pitch =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
+    q_roll  = -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
+		
+		if (q_yaw < 0) q_yaw += 3600;
+}
+#endif
+#ifdef MahonyAHRS
 void AHRS()
 {
 	  float dt = 0.004f; 
@@ -842,6 +967,8 @@ void AHRS()
 		
 		if (q_yaw < 0) q_yaw += 3600;
 }
+#endif
+
 float constrain(float x, float lower_b, float upper_b)
 {
 	if(x < lower_b) x = lower_b;
@@ -894,28 +1021,53 @@ void fn_I2C_SlaveRxCpltCallback(void){
 }
 void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)	
 {
+	debug_2_set;
+	
 	I2C_rx_data_index = I2C_rx_data_index + 1;	
+	
+	if (I2C_rx_data_index >= 7)
+	{
+
+		uint8_t command_code = 0xfd ;
+		if (I2C_rx_data[I2C_rx_data_index-2] == command_code && I2C_rx_data[I2C_rx_data_index-1] == command_code )
+		{
+			getRCcommand(I2C_rx_data_index-3);
+			I2C_rx_data_index = 0;
+		}
+		uint8_t command_code2 = 0xfe ;
+		if(I2C_rx_data_index >= 22)
+		{
+			if (I2C_rx_data[I2C_rx_data_index-2] == command_code2 && I2C_rx_data[I2C_rx_data_index-1] == command_code2)
+			{
+				getPIDgain(I2C_rx_data_index-1);
+				I2C_rx_data_index = 0;
+			} 
+		}
+		
+	}
+
 
 	if (I2C_rx_data_index == i2c_buffer_size) I2C_rx_data_index = 0;
 	HAL_I2C_Slave_Receive_IT(&hi2c1, (uint8_t*)(I2C_rx_data + I2C_rx_data_index), 1);
+	debug_2_reset;
 
 }
 
 void getPIDgain(uint8_t I2C_rx_data_index)
 {
-	  int16_t Kp_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-22]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-21]; 
-		int16_t	Ki_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-20]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-19];
-		int16_t	Kd_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-18]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-17];
+	  int16_t Kp_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-21]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-20]; 
+		int16_t	Ki_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-19]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-18];
+		int16_t	Kd_yaw_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-17]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-16];
 
-		int16_t	Kp_pitch_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-16]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-15];
-		int16_t	Ki_pitch_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-14]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-13];
-		int16_t	Kd_pitch_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-12]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-11];
+		int16_t	Kp_pitch_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-15]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-14];
+		int16_t	Ki_pitch_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-13]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-12];
+		int16_t	Kd_pitch_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-11]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-10];
 
-		int16_t	Kp_roll_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-10]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-9];
-		int16_t	Ki_roll_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-8]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-7];
-		int16_t	Kd_roll_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-6]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-5];
+		int16_t	Kp_roll_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-9]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-8];
+		int16_t	Ki_roll_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-7]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-6];
+		int16_t	Kd_roll_tmp = (int16_t)I2C_rx_data[I2C_rx_data_index-5]<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-4];
 		int16_t sum = (int16_t)Kp_roll_tmp + (int16_t)Ki_roll_tmp + (int16_t)Kd_roll_tmp + (int16_t)Kp_pitch_tmp + (int16_t)Ki_pitch_tmp + (int16_t)Kd_pitch_tmp + (int16_t)Kp_yaw_tmp + (int16_t)Ki_yaw_tmp + (int16_t)Kd_yaw_tmp;
-		int16_t	checksum_buffer =(((int16_t)I2C_rx_data[I2C_rx_data_index-4])<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-3]);
+		int16_t	checksum_buffer =(((int16_t)I2C_rx_data[I2C_rx_data_index-3])<<8 | (int16_t)I2C_rx_data[I2C_rx_data_index-2]);
 
 	if (checksum_buffer == sum)
 	{
@@ -947,11 +1099,11 @@ void getPIDgain(uint8_t I2C_rx_data_index)
 void getRCcommand(uint8_t I2C_rx_data_index)
 {
 	
-	int8_t	roll_tmp     = (int8_t)I2C_rx_data[I2C_rx_data_index-7];  
-	int8_t	pitch_tmp    = (int8_t)I2C_rx_data[I2C_rx_data_index-6]; 
-	int8_t	throttle_tmp = (int8_t)I2C_rx_data[I2C_rx_data_index-5];  
-	int8_t	yaw_tmp      = (int8_t)I2C_rx_data[I2C_rx_data_index-4];  
-	int8_t	sum_tmp      = (int8_t)I2C_rx_data[I2C_rx_data_index-3];
+	int8_t	roll_tmp     = (int8_t)I2C_rx_data[I2C_rx_data_index-4];  
+	int8_t	pitch_tmp    = (int8_t)I2C_rx_data[I2C_rx_data_index-3]; 
+	int8_t	throttle_tmp = (int8_t)I2C_rx_data[I2C_rx_data_index-2];  
+	int8_t	yaw_tmp      = (int8_t)I2C_rx_data[I2C_rx_data_index-1];  
+	int8_t	sum_tmp      = (int8_t)I2C_rx_data[I2C_rx_data_index];
 	int8_t	sum  = roll_tmp + pitch_tmp + throttle_tmp + yaw_tmp;
 
 	if ((int8_t)sum_tmp == (int8_t)sum)
@@ -969,21 +1121,21 @@ void getRCcommand(uint8_t I2C_rx_data_index)
 
 void readCommand (void)
 {
-	if (I2C_rx_data_index >= 7)
+	if (I2C_rx_data_index >= 6)
 	{
-		for (uint8_t count = I2C_rx_data_index ; count > 0 ; count--)
+		for (uint8_t count = I2C_rx_data_index ; count >= 6 ; count--)
 		{
 			uint8_t command_code = 0xfd ;
-			if (I2C_rx_data[count-2] == command_code && I2C_rx_data[count-1] == command_code )
+			if (I2C_rx_data[count-1] == command_code && I2C_rx_data[count] == command_code )
 			{
 				getRCcommand(count);
 				I2C_rx_data_index = 0;
 				break;
 			}
 			uint8_t command_code2 = 0xfe ;
-			if(count >= 22)
+			if(count >= 21)
 			{
-				if (I2C_rx_data[count-2] == command_code2 && I2C_rx_data[count-1] == command_code2)
+				if (I2C_rx_data[count-1] == command_code2 && I2C_rx_data[count] == command_code2)
 				{
 					getPIDgain(count);
 					I2C_rx_data_index = 0;

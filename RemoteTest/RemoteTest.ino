@@ -480,6 +480,8 @@ void blink(void)
 uint8_t setPIDgain(void)
 {
   int16_t temp ;
+
+//1st
   uint8_t command = 0XFE;
 
   int8_t data_buffer[20] = {0};
@@ -513,7 +515,15 @@ uint8_t setPIDgain(void)
 
   twi_writeTo(ARM_Address, &command, 1, 1);
   twi_writeTo(ARM_Address, &command, 1, 1);
+// 2nd
+  
+  for (int index = 0; index < 20; index++)
+  {
+    twi_writeTo(ARM_Address, (uint8_t*)data_buffer + index, 1, 1);
+  }
 
+  twi_writeTo(ARM_Address, &command, 1, 1);
+  twi_writeTo(ARM_Address, &command, 1, 1);
   // Wire.requestFrom(ARM_Address, 1);
   // temp = Wire.read() << 8 | Wire.read();
 
@@ -522,7 +532,20 @@ uint8_t setPIDgain(void)
 
 void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp)
 {
+//1st
   int8_t command = roll_tmp + pitch_tmp + throttle_tmp + yaw_tmp;
+
+  twi_writeTo(ARM_Address, (uint8_t*)&roll_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&pitch_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&throttle_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&yaw_tmp, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+
+  command = 0xFD;
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+// 2nd
+  command = roll_tmp + pitch_tmp + throttle_tmp + yaw_tmp;
 
   twi_writeTo(ARM_Address, (uint8_t*)&roll_tmp, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&pitch_tmp, 1, 1);

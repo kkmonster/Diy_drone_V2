@@ -44,6 +44,10 @@
 #define CS_MPU6000_GPIO_Port GPIOA
 #define INT_MPU6000_Pin GPIO_PIN_9
 #define INT_MPU6000_GPIO_Port GPIOA
+#define debug_2_Pin GPIO_PIN_6
+#define debug_2_GPIO_Port GPIOB
+#define debug_1_Pin GPIO_PIN_7
+#define debug_1_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
