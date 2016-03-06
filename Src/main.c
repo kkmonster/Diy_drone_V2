@@ -35,10 +35,12 @@
 
 /* USER CODE BEGIN Includes */
 
-//#define MadgwickAHRS   // choose only one "MadgwickAHRS" or "MahonyAHRS"
-#define MahonyAHRS
+// choose only one "MadgwickAHRS" or "MahonyAHRS"
 
-#define beta                        0.1f     
+#define MadgwickAHRS   
+//#define MahonyAHRS
+
+#define beta                        0.2f     
 #define ACCELEROMETER_SENSITIVITY   8192.0f  
 #define GYROSCOPE_SENSITIVITY       65.5f  
 #define Compass_SENSITIVITY       	1090.0f
@@ -243,11 +245,6 @@ int main(void)
 	
 	HAL_I2C_Slave_Receive_IT(&hi2c1, (uint8_t*)(I2C_rx_data+I2C_rx_data_index), 1);
   HAL_Delay(10);
-	
-	a = gx_diff;
-	b = gy_diff;
-	c = gx_diff;
-	
 	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   
   /* USER CODE END 2 */
@@ -261,6 +258,7 @@ int main(void)
 
   /* USER CODE BEGIN 3 */
     if (watchdog > 0) watchdog --;
+		
 		if(watchdog == 0)		
 		{
 			TIM2->CCR1 = 0 ;
@@ -720,6 +718,8 @@ void Drive_motor_output(void)
 void Interrupt_call(void)
 {
 	static uint8_t check ;
+	
+
 	debug_1_set;
 		
 			/* Read data from sensor */
@@ -758,13 +758,14 @@ void Interrupt_call(void)
 	Drive_motor_output(); 
 		
 		debug_1_reset;
+
 }
 #ifdef MadgwickAHRS
 void AHRS()
 {
 	  float dt = 0.004f; 
 		float gx = (((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
-		float gy = (((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
+		float gy = -(((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float gz = (((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float ax = ((float)rawAccx_X)/ACCELEROMETER_SENSITIVITY;
 		float ay = ((float)rawAccx_Y)/ACCELEROMETER_SENSITIVITY;
@@ -788,10 +789,10 @@ void AHRS()
 
 
 
-    float q1_dot = 0.5 * (-q2 * gx - q3 * gy - q4 * gz);
-		float q2_dot = 0.5 * ( q1 * gx + q3 * gz - q4 * gy);
-		float q3_dot = 0.5 * ( q1 * gy - q2 * gz + q4 * gx);
-		float q4_dot = 0.5 * ( q1 * gz + q2 * gy - q3 * gx);
+    float q0_dot = 0.5 * (-q1 * gx - q2 * gy - q3 * gz);
+		float q1_dot = 0.5 * ( q0 * gx + q2 * gz - q3 * gy);
+		float q2_dot = 0.5 * ( q0 * gy - q1 * gz + q3 * gx);
+		float q3_dot = 0.5 * ( q0 * gz + q1 * gy - q2 * gx);
 
 		if(!((ax == 0) && (ay == 0) && (az == 0))) 
 		{
@@ -801,51 +802,55 @@ void AHRS()
 			ay /= Norm;
 			az /= Norm;   
 
+			float _2q0 = 2 * q0;
 			float _2q1 = 2 * q1;
 			float _2q2 = 2 * q2;
 			float _2q3 = 2 * q3;
-			float _2q4 = 2 * q4;
+			float _4q0 = 4 * q0;
 			float _4q1 = 4 * q1;
 			float _4q2 = 4 * q2;
-			float _4q3 = 4 * q3;
+			float _8q1 = 8 * q1;
 			float _8q2 = 8 * q2;
-			float _8q3 = 8 * q3;
+			float q0q0 = q0 * q0;
 			float q1q1 = q1 * q1;
 			float q2q2 = q2 * q2;
 			float q3q3 = q3 * q3;
-			float q4q4 = q4 * q4;
 			// Gradient decent 
-			float s1 = _4q1 * q3q3 + _2q4 * ax + _4q1 * q2q2 - _2q2 * ay;
-			float s2 = _4q2 * q4q4 - _2q4 * ax + 4 * q1q1 * q2 - _2q1 * ay - _4q2 + _8q2 * q2q2 + _8q2 * q3q3 + _4q2 * az;
-			float s3 = 4 * q1q1 * q3 + _2q1 * ax + _4q3 * q4q4 - _2q4 * ay - _4q3 + _8q3 * q2q2 + _8q3 * q3q3 + _4q3 * az;
-			float s4 = 4 * q2q2 * q4 - _2q2 * ax + 4 * q3q3 * q4 - _2q3 * ay;
+			float s0 = _4q0 * q2q2 + _2q2 * ax + _4q0 * q1q1 - _2q1 * ay;
+		  float s1 = _4q1 * q3q3 - _2q3 * ax + 4.0f * q0q0 * q1 - _2q0 * ay - _4q1 + _8q1 * q1q1 + _8q1 * q2q2 + _4q1 * az;
+			float s2 = 4.0f * q0q0 * q2 + _2q0 * ax + _4q2 * q3q3 - _2q3 * ay - _4q2 + _8q2 * q1q1 + _8q2 * q2q2 + _4q2 * az;
+		  float s3 = 4.0f * q1q1 * q3 - _2q1 * ax + 4.0f * q2q2 * q3 - _2q2 * ay;
 			// Normalise 
-			Norm = sqrtf(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4); // normalise step magnitude
+			Norm = sqrtf(s1 * s1 + s2 * s2 + s3 * s3 + s0 * s0); // normalise step magnitude
 			s1 /= Norm;
 			s2 /= Norm;
 			s3 /= Norm;
-			s4 /= Norm;
+			s0 /= Norm;
 			// compensate acc
+			q0_dot -= (beta * s0);
 			q1_dot -= (beta * s1);
 			q2_dot -= (beta * s2);
 			q3_dot -= (beta * s3);
-			q4_dot -= (beta * s4);
 		}
 		// Integrate 
-		q1 += q1_dot / sampleFreq;
-		q2 += q2_dot / sampleFreq;
-		q3 += q3_dot / sampleFreq;
-		q4 += q4_dot / sampleFreq;
+		q0 += q0_dot * dt;
+		q1 += q1_dot * dt;
+		q2 += q2_dot * dt;
+		q3 += q3_dot * dt;
 		// Normalise
-		Norm = sqrtf(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4 );
+		Norm = sqrtf(q1 * q1 + q2 * q2 + q3 * q3 + q0 * q0 );
 		q1 /= Norm;
 		q2 /= Norm;
 		q3 /= Norm;
-		q4 /= Norm;		
+		q0 /= Norm;		
+		
+    // Pre-compute rotation matrix from quaternion
+    imuComputeRotationMatrix();
+		
 		/* Compute pitch/roll angles */
 
     q_pitch =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
-    q_roll  = -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_roll  =  (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
     q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 		
 		if (q_yaw < 0) q_yaw += 3600;
@@ -962,7 +967,7 @@ void AHRS()
 		/* Compute pitch/roll angles */
 
     q_pitch =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
-    q_roll  = -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_roll  =  (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
     q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 		
 		if (q_yaw < 0) q_yaw += 3600;
@@ -1048,6 +1053,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
 
 
 	if (I2C_rx_data_index == i2c_buffer_size) I2C_rx_data_index = 0;
+	
 	HAL_I2C_Slave_Receive_IT(&hi2c1, (uint8_t*)(I2C_rx_data + I2C_rx_data_index), 1);
 	debug_2_reset;
 
@@ -1090,9 +1096,6 @@ void getPIDgain(uint8_t I2C_rx_data_index)
 		Flag_setPID_gain_success = 0;
 		
 	}
-	
-
-//HAL_I2C_Slave_Transmit(&hi2c1,(uint8_t*)&checksum_buffer, 2, 2);
 
 }
 
@@ -1115,7 +1118,6 @@ void getRCcommand(uint8_t I2C_rx_data_index)
 		watchdog = 200;
 		
 	}
-
 }
 
 
