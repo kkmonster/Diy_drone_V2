@@ -35,8 +35,11 @@
 
 /* USER CODE BEGIN Includes */
 
-// choose only one "MadgwickAHRS" or "MahonyAHRS"
 
+// choose model drone
+#define V929  
+
+// choose only one "MadgwickAHRS" or "MahonyAHRS"
 #define MadgwickAHRS   
 //#define MahonyAHRS
 
@@ -664,8 +667,8 @@ void PID_controller(void)
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 	
 	Error_yaw 	= (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
-	Errer_pitch = -(float)ch2 * 0.30f - ((float)q_pitch*0.1f - pitch_offset)	;
-	Error_roll 	= -(float)ch1 * 0.30f  - ((float)q_roll*0.1f - roll_offset)	;
+	Errer_pitch = -(float)ch2 * 0.15f - ((float)q_pitch*0.1f - pitch_offset)	;
+	Error_roll 	= -(float)ch1 * 0.15f  - ((float)q_roll*0.1f - roll_offset)	;
 	
   // protect  wind-up
 
@@ -709,10 +712,17 @@ void Drive_motor_output(void)
 	if(motor_C > 2399) motor_C = 2399 ;
 	if(motor_D > 2399) motor_D = 2399 ;
 	
+#ifdef V929 //
+	TIM2->CCR1 = motor_B ;
+	TIM2->CCR2 = motor_C ;
+	TIM3->CCR1 = motor_D ;
+	TIM3->CCR2 = motor_A ;
+#else
 	TIM2->CCR1 = motor_D ;
 	TIM2->CCR2 = motor_A ;
 	TIM3->CCR1 = motor_B ;
 	TIM3->CCR2 = motor_C ;
+#endif
 }
 
 void Interrupt_call(void)
