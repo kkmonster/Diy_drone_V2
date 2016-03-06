@@ -43,7 +43,7 @@
 #define MadgwickAHRS   
 //#define MahonyAHRS
 
-#define beta                        0.2f     
+  
 #define ACCELEROMETER_SENSITIVITY   8192.0f  
 #define GYROSCOPE_SENSITIVITY       65.5f  
 #define Compass_SENSITIVITY       	1090.0f
@@ -123,6 +123,7 @@ volatile uint8_t Flag_setPID_gain_success = 0;
 volatile int16_t magneticDeclination = 0;
 volatile float Ref_yaw=0, Ref_pitch=0, Ref_roll=0 ;
 volatile int16_t q_yaw, q_pitch, q_roll;                               		// States value
+volatile float beta = 0.25f   ;
 volatile float q0=1, q1=0, q2=0, q3=0;
 volatile float T_center =0, yaw_center=0;
 volatile float Error_yaw=0, Errer_pitch=0, Error_roll=0; 								//States Error
@@ -594,7 +595,6 @@ void initHMC5983(void)
 
 void Read_MPU6000(void)
 {
-//		uint8_t rx_tmp[14] = {0};
 	  ENABLE_MPU6000;
     uint8_t tmp = 0x3b | 0x80;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // DATA_RDY_EN
@@ -608,19 +608,22 @@ void Read_MPU6000(void)
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
 	
+	  beta = 0.25f;
 	  if (T_center_buffer < 30) 
 		{
-			a = Smooth_filter(0.01f, rawGyrox_X, a);
-			b = Smooth_filter(0.01f, rawGyrox_Y, b);	
-			c = Smooth_filter(0.01f, rawGyrox_Z, c);
-			d = Smooth_filter(0.01f, rawGyrox_X, d);
-			e = Smooth_filter(0.01f, rawGyrox_Y, e);	
+			a = Smooth_filter(0.005f, rawGyrox_X, a);
+			b = Smooth_filter(0.005f, rawGyrox_Y, b);	
+			c = Smooth_filter(0.005f, rawGyrox_Z, c);
+			d = Smooth_filter(0.005f, rawAccx_X, d);
+			e = Smooth_filter(0.005f, rawAccx_Y, e);	
+			beta = 2.0;
 			
 		}
 	
 		rawGyrox_X -= gx_diff;
 		rawGyrox_Y -= gy_diff;
 		rawGyrox_Z -= gz_diff;
+		
 		rawGyrox_X -= ax_diff;
 		rawGyrox_Y -= ay_diff;
 
@@ -665,11 +668,15 @@ void PID_controller(void)
 	T_center = Smooth_filter(0.3f, T_center_buffer, T_center);
 
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
-	
-	Error_yaw 	= (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
-	Errer_pitch = -(float)ch2 * 0.15f - ((float)q_pitch*0.1f - pitch_offset)	;
-	Error_roll 	= -(float)ch1 * 0.15f  - ((float)q_roll*0.1f - roll_offset)	;
-	
+#ifdef V929
+	Error_yaw 	=  (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+	Errer_pitch =  -(float)ch2 * 0.25f - ((float)q_pitch*0.1f - pitch_offset)	;
+	Error_roll 	=  -(float)ch1 * 0.25f - ((float)q_roll*0.1f - roll_offset)	;
+#else
+	Error_yaw 	=  (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+	Errer_pitch = -(float)ch2 * 0.25f - ((float)q_pitch*0.1f - pitch_offset)	;
+	Error_roll 	= -(float)ch1 * 0.25f - ((float)q_roll*0.1f - roll_offset)	;
+#endif
   // protect  wind-up
 
 	
@@ -859,10 +866,16 @@ void AHRS()
 		
 		/* Compute pitch/roll angles */
 
+
+#ifdef V929
+    q_pitch =  -(atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
+    q_roll  =  -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
+#else
     q_pitch =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
     q_roll  =  (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
     q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
-		
+#endif
 		if (q_yaw < 0) q_yaw += 3600;
 }
 #endif
@@ -943,13 +956,10 @@ void AHRS()
         ez += (ax * rMat[2][1] - ay * rMat[2][0]);
     }
 
-    // Calculate kP gain. If we are acquiring initial attitude (not armed and within 20 sec from powerup) scale the kP to converge faster
-    float dcmKpGain = 0.25f;
-
     // Apply proportional and integral feedback
-    gx += dcmKpGain * ex;
-    gy += dcmKpGain * ey;
-    gz += dcmKpGain * ez;
+    gx += beta * ex;
+    gy += beta * ey;
+    gz += beta * ez;
 
     // Integrate rate of change of quaternion
     gx *= (0.5f * dt);
@@ -975,11 +985,15 @@ void AHRS()
     imuComputeRotationMatrix();
 		
 		/* Compute pitch/roll angles */
-
+#ifdef V929
+    q_pitch =  -(atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
+    q_roll  =  -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
+#else
     q_pitch =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
     q_roll  =  (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
     q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
-		
+#endif
 		if (q_yaw < 0) q_yaw += 3600;
 }
 #endif
@@ -1040,26 +1054,26 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
 	
 	I2C_rx_data_index = I2C_rx_data_index + 1;	
 	
-	if (I2C_rx_data_index >= 7)
-	{
-
-		uint8_t command_code = 0xfd ;
-		if (I2C_rx_data[I2C_rx_data_index-2] == command_code && I2C_rx_data[I2C_rx_data_index-1] == command_code )
+		if (I2C_rx_data_index >= 7)
 		{
-			getRCcommand(I2C_rx_data_index-3);
-			I2C_rx_data_index = 0;
-		}
-		uint8_t command_code2 = 0xfe ;
-		if(I2C_rx_data_index >= 22)
-		{
-			if (I2C_rx_data[I2C_rx_data_index-2] == command_code2 && I2C_rx_data[I2C_rx_data_index-1] == command_code2)
+			uint8_t command_code = 0xfd ;
+			if (I2C_rx_data[I2C_rx_data_index-2] == command_code && I2C_rx_data[I2C_rx_data_index-1] == command_code )
 			{
-				getPIDgain(I2C_rx_data_index-1);
+				getRCcommand(I2C_rx_data_index-3);
 				I2C_rx_data_index = 0;
-			} 
+			}
+			
+			uint8_t command_code2 = 0xfe ;
+			if(I2C_rx_data_index >= 22)
+			{
+				if (I2C_rx_data[I2C_rx_data_index-2] == command_code2 && I2C_rx_data[I2C_rx_data_index-1] == command_code2)
+				{
+					getPIDgain(I2C_rx_data_index-1);
+					I2C_rx_data_index = 0;
+				} 
+			}
 		}
-		
-	}
+	
 
 
 	if (I2C_rx_data_index == i2c_buffer_size) I2C_rx_data_index = 0;
