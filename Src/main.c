@@ -37,18 +37,18 @@
 
 
 // choose model drone
-#define V929  
+//#define V929  
 
 // choose only one "MadgwickAHRS" or "MahonyAHRS"
-#define MadgwickAHRS   
-//#define MahonyAHRS
+//#define MadgwickAHRS   
+#define MahonyAHRS
 
   
 #define ACCELEROMETER_SENSITIVITY   8192.0f  
 #define GYROSCOPE_SENSITIVITY       65.5f  
 #define Compass_SENSITIVITY       	1090.0f
-#define M_PI                        3.14159265359f	    
 #define M_PIf       								3.14159265358979323846f
+#define M_PI                        M_PIf    
 #define sampleFreq                  250.0f     			    // 200 hz sample rate!   
 #define limmit_I                    300.0f     
 
@@ -123,7 +123,7 @@ volatile uint8_t Flag_setPID_gain_success = 0;
 volatile int16_t magneticDeclination = 0;
 volatile float Ref_yaw=0, Ref_pitch=0, Ref_roll=0 ;
 volatile int16_t q_yaw, q_pitch, q_roll;                               		// States value
-volatile float beta = 0.25f   ;
+volatile float beta = 0.15f   ;
 volatile float q0=1, q1=0, q2=0, q3=0;
 volatile float T_center =0, yaw_center=0;
 volatile float Error_yaw=0, Errer_pitch=0, Error_roll=0; 								//States Error
@@ -536,7 +536,7 @@ void initMPU6000(void)
 		
     ENABLE_MPU6000;
     tmp = MPU6000_SMPLRT_DIV;
-    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // Accel & Gyro Sample Rate 200 Hz
+    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // Accel & Gyro Sample Rate 250 Hz
     tmp = 0x03;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
@@ -608,24 +608,24 @@ void Read_MPU6000(void)
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
 	
-	  beta = 0.25f;
-	  if (T_center_buffer < 30) 
+	  beta = 0.15f;
+	  if (T_center < 20) 
 		{
-			a = Smooth_filter(0.005f, rawGyrox_X, a);
-			b = Smooth_filter(0.005f, rawGyrox_Y, b);	
-			c = Smooth_filter(0.005f, rawGyrox_Z, c);
-			d = Smooth_filter(0.005f, rawAccx_X, d);
-			e = Smooth_filter(0.005f, rawAccx_Y, e);	
-			beta = 2.0;
-			
+			a = Smooth_filter(0.01f, rawGyrox_X, a);
+			b = Smooth_filter(0.01f, rawGyrox_Y, b);	
+			c = Smooth_filter(0.01f, rawGyrox_Z, c);
+			d = Smooth_filter(0.01f, rawAccx_X, d);
+			e = Smooth_filter(0.01f, rawAccx_Y, e);	
+			f = Smooth_filter(0.01f, rawAccx_Z, f);	
+			beta = 2.0f;			
 		}
 	
 		rawGyrox_X -= gx_diff;
 		rawGyrox_Y -= gy_diff;
 		rawGyrox_Z -= gz_diff;
 		
-		rawGyrox_X -= ax_diff;
-		rawGyrox_Y -= ay_diff;
+//		rawAccx_X -= ax_diff;
+//		rawAccx_Y -= ay_diff;
 
 }
 
@@ -665,11 +665,11 @@ void PID_controller(void)
      
 	T_center_buffer    = (float)ch3 *   18.0f;
 	
-	T_center = Smooth_filter(0.3f, T_center_buffer, T_center);
+	T_center = Smooth_filter(0.35f, T_center_buffer, T_center);
 
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 #ifdef V929
-	Error_yaw 	=  (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+	Error_yaw 	=  -(float)ch4 * 3.0f   - ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
 	Errer_pitch =  -(float)ch2 * 0.25f - ((float)q_pitch*0.1f - pitch_offset)	;
 	Error_roll 	=  -(float)ch1 * 0.25f - ((float)q_roll*0.1f - roll_offset)	;
 #else
@@ -734,8 +734,6 @@ void Drive_motor_output(void)
 
 void Interrupt_call(void)
 {
-	static uint8_t check ;
-	
 
 	debug_1_set;
 		
@@ -748,19 +746,14 @@ void Interrupt_call(void)
 		PID_controller();
 
     if (watchdog > 0) watchdog --;
-		if((T_center_buffer < 30) || (watchdog == 0))		
+		if((T_center < 20) || (watchdog == 0))		
 		//if((T_center < 50) || (watchdog == 0) || Flag_setPID_gain_success == 0)		
 		{
-            
+
 			gx_diff = a;
 			gy_diff = b;
 			gx_diff = c;
-			if (check == 0)
-			{	
-				ax_diff = d;
-				ay_diff = e;
-			}
-			
+
 			Sum_Error_yaw=0;
 			Sum_Error_pitch=0;
 			Sum_Error_roll=0;         
@@ -769,10 +762,9 @@ void Interrupt_call(void)
 			motor_B=0;
 			motor_C=0;
 			motor_D=0;
-		}else{
-			check = 1;
 		}
-	Drive_motor_output(); 
+		
+		Drive_motor_output(); 
 		
 		debug_1_reset;
 
