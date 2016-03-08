@@ -37,7 +37,7 @@
 
 
 // choose model drone
-//#define V929  
+#define V929  
 
 // choose only one "MadgwickAHRS" or "MahonyAHRS"
 //#define MadgwickAHRS   
@@ -147,12 +147,24 @@ volatile float Kp_yaw = 0;
 volatile float Ki_yaw = 0;
 volatile float Kd_yaw = 0;
 
-int16_t gx_diff = 0;
-int16_t gy_diff = 0;
-int16_t gz_diff = 0;
-int16_t ax_diff = 0;
-int16_t ay_diff = 0;
+#ifdef V929
+
+int16_t gx_diff = -212;
+int16_t gy_diff = 59;
+int16_t gz_diff = 7;
+int16_t ax_diff = 167;
+int16_t ay_diff = 145;
 int16_t az_diff = 0;
+#else
+int16_t gx_diff = -22;
+int16_t gy_diff = 72;
+int16_t gz_diff = -56;
+int16_t ax_diff = 33;
+int16_t ay_diff = -297;
+int16_t az_diff = 0;
+#endif
+
+
 
 volatile uint8_t  I2C_rx_buffer = 0;
 volatile uint8_t  I2C_rx_data[i2c_buffer_size] = {0};
@@ -611,12 +623,12 @@ void Read_MPU6000(void)
 	  beta = 0.15f;
 	  if (T_center < 20) 
 		{
-			a = Smooth_filter(0.01f, rawGyrox_X, a);
-			b = Smooth_filter(0.01f, rawGyrox_Y, b);	
-			c = Smooth_filter(0.01f, rawGyrox_Z, c);
-			d = Smooth_filter(0.01f, rawAccx_X, d);
-			e = Smooth_filter(0.01f, rawAccx_Y, e);	
-			f = Smooth_filter(0.01f, rawAccx_Z, f);	
+			a = Smooth_filter(0.001f, rawGyrox_X, a);
+			b = Smooth_filter(0.001f, rawGyrox_Y, b);	
+			c = Smooth_filter(0.001f, rawGyrox_Z, c);
+			d = Smooth_filter(0.001f, rawAccx_X, d);
+			e = Smooth_filter(0.001f, rawAccx_Y, e);	
+			f = Smooth_filter(0.001f, rawAccx_Z, f);	
 			beta = 2.0f;			
 		}
 	
@@ -624,8 +636,8 @@ void Read_MPU6000(void)
 		rawGyrox_Y -= gy_diff;
 		rawGyrox_Z -= gz_diff;
 		
-//		rawAccx_X -= ax_diff;
-//		rawAccx_Y -= ay_diff;
+		rawAccx_X -= ax_diff;
+		rawAccx_Y -= ay_diff;
 
 }
 
@@ -671,11 +683,11 @@ void PID_controller(void)
 #ifdef V929
 	Error_yaw 	=  -(float)ch4 * 3.0f   - ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
 	Errer_pitch =  -(float)ch2 * 0.25f - ((float)q_pitch*0.1f - pitch_offset)	;
-	Error_roll 	=  -(float)ch1 * 0.25f - ((float)q_roll*0.1f - roll_offset)	;
+	Error_roll 	=  -(float)ch1 * 0.25f + ((float)q_roll*0.1f - roll_offset)	;
 #else
 	Error_yaw 	=  (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
 	Errer_pitch = -(float)ch2 * 0.25f - ((float)q_pitch*0.1f - pitch_offset)	;
-	Error_roll 	= -(float)ch1 * 0.25f - ((float)q_roll*0.1f - roll_offset)	;
+	Error_roll 	= -(float)ch1 * 0.25f + ((float)q_roll*0.1f - roll_offset)	;
 #endif
   // protect  wind-up
 
@@ -750,9 +762,9 @@ void Interrupt_call(void)
 		//if((T_center < 50) || (watchdog == 0) || Flag_setPID_gain_success == 0)		
 		{
 
-			gx_diff = a;
-			gy_diff = b;
-			gx_diff = c;
+//			gx_diff = a;
+//			gy_diff = b;
+//			gx_diff = c;
 
 			Sum_Error_yaw=0;
 			Sum_Error_pitch=0;
@@ -861,7 +873,7 @@ void AHRS()
 
 #ifdef V929
     q_pitch =  -(atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
-    q_roll  =  -(((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
+    q_roll  =  (((0.5f * M_PIf) - acosf(-rMat[2][0])) * (1800.0f / M_PIf));
     q_yaw   =  ((atan2f(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf) + magneticDeclination));
 #else
     q_pitch =  (atan2f(rMat[2][1], rMat[2][2]) * (1800.0f / M_PIf));
