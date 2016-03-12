@@ -40,8 +40,8 @@
 #define V929  
 
 // choose only one "MadgwickAHRS" or "MahonyAHRS"
-//#define MadgwickAHRS   
-#define MahonyAHRS
+#define MadgwickAHRS   
+//#define MahonyAHRS
 
   
 #define ACCELEROMETER_SENSITIVITY   8192.0f  
@@ -152,7 +152,7 @@ volatile float Kd_yaw = 0;
 int16_t gx_diff = -212;
 int16_t gy_diff = 59;
 int16_t gz_diff = 7;
-int16_t ax_diff = 167;
+int16_t ax_diff = 0;
 int16_t ay_diff = 145;
 int16_t az_diff = 0;
 #else
@@ -175,7 +175,7 @@ int16_t xxx = 0;
 /* USER CODE for SPPM Receiver  */
 
 volatile uint8_t	index= 0 ;
-volatile int16_t	ch1=0,ch2=0,ch3=0,ch4=0; 
+volatile float	ch1=0,ch2=0,ch3=0,ch4=0; 
 volatile int16_t	_ch1=0,_ch2=0,_ch3=0,_ch4=0;      
 volatile int16_t	motor_A=0, motor_B=0, motor_C=0, motor_D=0 ;// Motors output value 
 uint8_t rx_tmp[14] = {0};
@@ -540,7 +540,7 @@ void initMPU6000(void)
     ENABLE_MPU6000;
     tmp = MPU6000_CONFIG;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);       // Accel and Gyro DLPF Setting
-    tmp = BITS_DLPF_CFG_42HZ;
+    tmp = BITS_DLPF_CFG_98HZ;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -620,7 +620,7 @@ void Read_MPU6000(void)
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
 	
-	  beta = 0.15f;
+	  beta = 0.1f;
 	  if (T_center < 20) 
 		{
 			a = Smooth_filter(0.001f, rawGyrox_X, a);
@@ -629,7 +629,7 @@ void Read_MPU6000(void)
 			d = Smooth_filter(0.001f, rawAccx_X, d);
 			e = Smooth_filter(0.001f, rawAccx_Y, e);	
 			f = Smooth_filter(0.001f, rawAccx_Z, f);	
-			beta = 2.0f;			
+			beta =  1.0f;			
 		}
 	
 		rawGyrox_X -= gx_diff;
@@ -675,6 +675,13 @@ void PID_controller(void)
 	float Buf_D_Errer_pitch =Errer_pitch;
 	float Buf_D_Error_roll  =Error_roll; 
      
+	
+	static float cal_pitch ;
+	static float cal_roll  ;
+		
+	cal_pitch = Smooth_filter(0.7f, q_pitch*0.1f, cal_pitch);
+	cal_roll = Smooth_filter(0.7f, q_roll*0.1f, cal_roll);
+	
 	T_center_buffer    = (float)ch3 *   18.0f;
 	
 	T_center = Smooth_filter(0.35f, T_center_buffer, T_center);
@@ -682,12 +689,12 @@ void PID_controller(void)
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 #ifdef V929
 	Error_yaw 	=  -(float)ch4 * 3.0f   - ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
-	Errer_pitch =  -(float)ch2 * 0.25f - ((float)q_pitch*0.1f - pitch_offset)	;
-	Error_roll 	=  -(float)ch1 * 0.25f + ((float)q_roll*0.1f - roll_offset)	;
+	Errer_pitch =  -(float)ch2 * 0.25f - ((float)cal_pitch)	;
+	Error_roll 	=  -(float)ch1 * 0.25f + ((float)cal_roll)	;
 #else
 	Error_yaw 	=  (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
-	Errer_pitch = -(float)ch2 * 0.25f - ((float)q_pitch*0.1f - pitch_offset)	;
-	Error_roll 	= -(float)ch1 * 0.25f + ((float)q_roll*0.1f - roll_offset)	;
+	Errer_pitch = -(float)ch2 * 0.25f - ((float)cal_pitch)	;
+	Error_roll 	= -(float)ch1 * 0.25f + ((float)cal_roll)	;
 #endif
   // protect  wind-up
 
@@ -701,14 +708,24 @@ void PID_controller(void)
 	D_Error_pitch =(Errer_pitch-Buf_D_Errer_pitch)*sampleFreq;
 	D_Error_roll = (Error_roll-Buf_D_Error_roll)  *sampleFreq;
 
-	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	  * Sum_Error_yaw)   + constrain((Kd_yaw * D_Error_yaw), -300, 300);
-	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch) + constrain((Kd_pitch * D_Error_pitch), -300, 300);
-	Del_roll	= (Kp_roll  * Error_roll)		+ (Ki_roll	* Sum_Error_roll)  + constrain((Kd_roll * D_Error_roll), -300, 300);
+	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	  * Sum_Error_yaw)   + constrain((Kd_yaw * D_Error_yaw), -1000, 1000);
+	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch) + constrain((Kd_pitch * D_Error_pitch), -1000, 1000);
+	Del_roll	= (Kp_roll  * Error_roll)		+ (Ki_roll	* Sum_Error_roll)  + constrain((Kd_roll * D_Error_roll), -1000, 1000);
 
-	motor_A = T_center + constrain((+Del_pitch	+Del_roll +Del_yaw), -1250, 1250);
-	motor_B = T_center + constrain((+Del_pitch	-Del_roll -Del_yaw), -1250, 1250) ;
-	motor_C = T_center + constrain((-Del_pitch	-Del_roll +Del_yaw), -1250, 1250) ;
-	motor_D = T_center + constrain((-Del_pitch	+Del_roll -Del_yaw), -1250, 1250) ;
+	motor_A = T_center +Del_pitch	+Del_roll +Del_yaw;
+	motor_B = T_center +Del_pitch	-Del_roll -Del_yaw;
+	motor_C = T_center -Del_pitch	-Del_roll +Del_yaw;
+	motor_D = T_center -Del_pitch	+Del_roll -Del_yaw;	
+	
+	
+//	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	  * Sum_Error_yaw)   + constrain((Kd_yaw * D_Error_yaw), -1000, 1000);
+//	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch) + constrain((Kd_pitch * D_Error_pitch), -1000, 1000);
+//	Del_roll	= (Kp_roll  * Error_roll)		+ (Ki_roll	* Sum_Error_roll)  + constrain((Kd_roll * D_Error_roll), -1000, 1000);
+
+//	motor_A = T_center + constrain((+Del_pitch	+Del_roll +Del_yaw), -1250, 1250);
+//	motor_B = T_center + constrain((+Del_pitch	-Del_roll -Del_yaw), -1250, 1250) ;
+//	motor_C = T_center + constrain((-Del_pitch	-Del_roll +Del_yaw), -1250, 1250) ;
+//	motor_D = T_center + constrain((-Del_pitch	+Del_roll -Del_yaw), -1250, 1250) ;
 
 }
 
@@ -758,7 +775,7 @@ void Interrupt_call(void)
 		PID_controller();
 
     if (watchdog > 0) watchdog --;
-		if((T_center < 20) || (watchdog == 0))		
+		if((T_center < 30) || (watchdog == 0))		
 		//if((T_center < 50) || (watchdog == 0) || Flag_setPID_gain_success == 0)		
 		{
 
@@ -788,7 +805,7 @@ void AHRS()
 		float gx = (((float)rawGyrox_X)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float gy = -(((float)rawGyrox_Y)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
 		float gz = (((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY)*(M_PIf/180.0f);
-		float ax = ((float)rawAccx_X)/ACCELEROMETER_SENSITIVITY;
+		float ax = -((float)rawAccx_X)/ACCELEROMETER_SENSITIVITY;
 		float ay = ((float)rawAccx_Y)/ACCELEROMETER_SENSITIVITY;
 		float az = ((float)rawAccx_Z)/ACCELEROMETER_SENSITIVITY;
     float my =-((float)rawMagx_X)/Compass_SENSITIVITY;
