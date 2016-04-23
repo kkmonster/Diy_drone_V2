@@ -37,13 +37,14 @@
 
 // choose only one "MadgwickAHRS" or "MahonyAHRS"
 
-#define MadgwickAHRS   
+#define Complementary
+//#define MadgwickAHRS   
 //#define MahonyAHRS
 
 #define beta                        0.2f     
 #define ACCELEROMETER_SENSITIVITY   8192.0f  
-#define GYROSCOPE_SENSITIVITY       65.5f  
-#define Compass_SENSITIVITY       	1090.0f
+#define GYROSCOPE_SENSITIVITY       16.4f  
+#define Compass_SENSITIVITY       	4096.0f
 #define M_PI                        3.14159265359f	    
 #define M_PIf       								3.14159265358979323846f
 #define sampleFreq                  250.0f     			    // 200 hz sample rate!   
@@ -234,7 +235,7 @@ int main(void)
 	DISABLE_MPU6000;
 	
 	initMPU6000();
-	initHMC5983();
+	//initHMC5983();
 	
 	HAL_TIM_PWM_Start(&htim2,TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim2,TIM_CHANNEL_2);
@@ -505,8 +506,8 @@ void initMPU6000(void)
 
     ENABLE_MPU6000;
     tmp = MPU6000_ACCEL_CONFIG;
-    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);        // Accel +/- 4 G Full Scale
-    tmp = BITS_FS_4G;
+    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);        // Accel +/- 8 G Full Scale
+    tmp = BITS_FS_8G;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -514,8 +515,8 @@ void initMPU6000(void)
 
     ENABLE_MPU6000;
     tmp = MPU6000_GYRO_CONFIG;
-    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);         // Gyro +/- 500 DPS Full Scale
-    tmp = BITS_FS_500DPS;
+    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);         // Gyro +/- 2000 DPS Full Scale
+    tmp = BITS_FS_2000DPS;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -532,8 +533,8 @@ void initMPU6000(void)
 		
     ENABLE_MPU6000;
     tmp = MPU6000_SMPLRT_DIV;
-    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // Accel & Gyro Sample Rate 200 Hz
-    tmp = 0x03;
+    HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);          // Accel & Gyro Sample Rate 500 Hz
+    tmp = 0x01;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -663,7 +664,7 @@ void PID_controller(void)
 
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 	
-	Error_yaw 	= (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
+	Error_yaw 	=  (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
 	Errer_pitch = -(float)ch2 * 0.30f - ((float)q_pitch*0.1f - pitch_offset)	;
 	Error_roll 	= -(float)ch1 * 0.30f  - ((float)q_roll*0.1f - roll_offset)	;
 	
@@ -692,27 +693,15 @@ void PID_controller(void)
 
 void Drive_motor_output(void)
 {
-	
   //motor_A = 100 ;
 	//motor_B = 100 ;
 	//motor_C = 100 ;
 	//motor_D = 100 ;
 	
-	// limmit output max, min
-	if(motor_A < 0) motor_A = 0 ;
-	if(motor_B < 0) motor_B = 0 ;
-	if(motor_C < 0) motor_C = 0 ;
-	if(motor_D < 0) motor_D = 0 ;
-	
-	if(motor_A > 2399) motor_A = 2399 ;
-	if(motor_B > 2399) motor_B = 2399 ;
-	if(motor_C > 2399) motor_C = 2399 ;
-	if(motor_D > 2399) motor_D = 2399 ;
-	
-	TIM2->CCR1 = motor_D ;
-	TIM2->CCR2 = motor_A ;
-	TIM3->CCR1 = motor_B ;
-	TIM3->CCR2 = motor_C ;
+	TIM2->CCR1 = constrain(motor_D, 0, 2399);
+	TIM2->CCR2 = constrain(motor_A, 0, 2399);
+	TIM3->CCR1 = constrain(motor_B, 0, 2399);
+	TIM3->CCR2 = constrain(motor_C, 0, 2399);
 }
 
 void Interrupt_call(void)
@@ -724,7 +713,7 @@ void Interrupt_call(void)
 		
 			/* Read data from sensor */
 		Read_MPU6000();
-		Read_HMC5983();
+		//Read_HMC5983();
 
 		AHRS(); 
 		/* Controller */
@@ -732,7 +721,6 @@ void Interrupt_call(void)
 
     if (watchdog > 0) watchdog --;
 		if((T_center_buffer < 30) || (watchdog == 0))		
-		//if((T_center < 50) || (watchdog == 0) || Flag_setPID_gain_success == 0)		
 		{
             
 			gx_diff = a;
@@ -760,6 +748,18 @@ void Interrupt_call(void)
 		debug_1_reset;
 
 }
+#ifdef Complementary
+void AHRS()
+{
+		/* Compute pitch/roll angles */
+
+    q_pitch =  1;
+    q_roll  =  1;
+    q_yaw   =  1;
+
+}
+#endif
+
 #ifdef MadgwickAHRS
 void AHRS()
 {
