@@ -7,7 +7,10 @@
 #define DEFAULT_SSID_LENGTH 16
 #define ARM_Address 55
 #define LED 16
+
+
 #define Print_Debug
+
 
 typedef struct
 {
@@ -307,6 +310,8 @@ void Read_udp(void)
           trim_tmp_0[0] = controlData_prev.roll;
           trim_tmp_0[1] = controlData_prev.pitch;
           trim_tmp_0[2] = controlData_prev.yaw;
+
+
           saveTrimData(trim_tmp_0);
           memcpy(&Trim_value, &trim_tmp_0, 3);
 
@@ -554,6 +559,20 @@ void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, 
   twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
 
   command = 0xFD;
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+}
+
+void senttrimcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp)
+{
+//1st
+
+  command = 0xFC;
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+// 2nd
+
+  command = 0xFC;
   twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
 }
