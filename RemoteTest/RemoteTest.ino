@@ -62,6 +62,7 @@ void blink(void);
 uint8_t setPIDgain(void);
 void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp);
 void Read_udp(void);
+void senttrimcommand(void);
 
 
 IPAddress local_ip(192, 168, 5, 1);
@@ -310,6 +311,7 @@ void Read_udp(void)
           saveTrimData(trim_tmp_0);
           memcpy(&Trim_value, &trim_tmp_0, 3);
 
+          senttrimcommand();
 
 
 #ifdef Print_Debug
@@ -569,3 +571,19 @@ void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, 
   twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
 }
+
+void senttrimcommand(void)
+{
+  //1st
+
+  uint8_t command = 0xFC;
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+  // 2nd
+
+  command = 0xFC;
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+  twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
+}
+
+
