@@ -542,7 +542,8 @@ void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, 
   if (analogRead(A0) < 770)
   {
     if (throttle_tmp_buffer > 0) throttle_tmp_buffer-- ;
-    throttle_tmp = throttle_tmp_buffer / 10;
+    if (throttle_tmp > throttle_tmp_buffer / 10) throttle_tmp = throttle_tmp_buffer / 10;
+
   } else {
     throttle_tmp_buffer = throttle_tmp * 10;
   }
