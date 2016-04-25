@@ -40,12 +40,12 @@
 #define V929  
 
 // choose only one "MadgwickAHRS" or "MahonyAHRS"
-#define MadgwickAHRS   
-//#define MahonyAHRS
+//#define MadgwickAHRS   
+#define MahonyAHRS
 
   
 #define ACCELEROMETER_SENSITIVITY   8192.0f  
-#define GYROSCOPE_SENSITIVITY       65.5f  
+#define GYROSCOPE_SENSITIVITY       16.4f  
 #define Compass_SENSITIVITY       	1090.0f
 #define M_PIf       								3.14159265358979323846f
 #define M_PI                        M_PIf    
@@ -148,12 +148,12 @@ volatile float Ki_yaw = 0;
 volatile float Kd_yaw = 0;
 
 #ifdef V929
-
-int16_t gx_diff = -212;
-int16_t gy_diff = 59;
-int16_t gz_diff = 7;
-int16_t ax_diff = 0;
-int16_t ay_diff = 145;
+// prototype
+int16_t gx_diff = -54;
+int16_t gy_diff = 20;
+int16_t gz_diff = -8;
+int16_t ax_diff = 76;
+int16_t ay_diff = 114;
 int16_t az_diff = 0;
 #else
 int16_t gx_diff = -22;
@@ -522,7 +522,7 @@ void initMPU6000(void)
     ENABLE_MPU6000;
     tmp = MPU6000_ACCEL_CONFIG;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);        // Accel +/- 4 G Full Scale
-    tmp = BITS_FS_4G;
+    tmp = BITS_FS_8G;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -531,7 +531,7 @@ void initMPU6000(void)
     ENABLE_MPU6000;
     tmp = MPU6000_GYRO_CONFIG;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);         // Gyro +/- 500 DPS Full Scale
-    tmp = BITS_FS_500DPS;
+    tmp = BITS_FS_2000DPS;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -540,7 +540,7 @@ void initMPU6000(void)
     ENABLE_MPU6000;
     tmp = MPU6000_CONFIG;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);       // Accel and Gyro DLPF Setting
-    tmp = BITS_DLPF_CFG_98HZ;
+    tmp = BITS_DLPF_CFG_42HZ;
     HAL_SPI_Transmit(MPU6000_SPI, &tmp, 1, 10);
     DISABLE_MPU6000;
 
@@ -620,8 +620,8 @@ void Read_MPU6000(void)
 		rawGyrox_Y = ((int16_t)rx_tmp[10])<<8 | (int16_t)rx_tmp[11];
 		rawGyrox_Z = ((int16_t)rx_tmp[12])<<8 | (int16_t)rx_tmp[13];
 	
-	  beta = 0.1f;
-	  if (T_center < 20) 
+	  beta = 0.2f;
+	  if (T_center < 40) 
 		{
 			a = Smooth_filter(0.001f, rawGyrox_X, a);
 			b = Smooth_filter(0.001f, rawGyrox_Y, b);	
@@ -629,7 +629,7 @@ void Read_MPU6000(void)
 			d = Smooth_filter(0.001f, rawAccx_X, d);
 			e = Smooth_filter(0.001f, rawAccx_Y, e);	
 			f = Smooth_filter(0.001f, rawAccx_Z, f);	
-			beta =  1.0f;			
+			beta =  2.0f;			
 		}
 	
 		rawGyrox_X -= gx_diff;
@@ -682,15 +682,15 @@ void PID_controller(void)
 	cal_pitch = Smooth_filter(0.7f, q_pitch*0.1f, cal_pitch);
 	cal_roll = Smooth_filter(0.7f, q_roll*0.1f, cal_roll);
 	
-	T_center_buffer    = (float)ch3 *   18.0f;
+	T_center_buffer    = (float)ch3 *   20.0f;
 	
 	T_center = Smooth_filter(0.35f, T_center_buffer, T_center);
 
 	//Error_yaw 	= (float)ch4 * 3.0f   -  (float)q_yaw/10.0f;
 #ifdef V929
 	Error_yaw 	=  -(float)ch4 * 3.0f   - ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
-	Errer_pitch =  -(float)ch2 * 0.25f - ((float)cal_pitch)	;
-	Error_roll 	=  -(float)ch1 * 0.25f + ((float)cal_roll)	;
+	Errer_pitch =  -(float)ch2 * 0.3f - ((float)cal_pitch)	;
+	Error_roll 	=  -(float)ch1 * 0.3f + ((float)cal_roll)	;
 #else
 	Error_yaw 	=  (float)ch4 * 3.0f   + ((float)rawGyrox_Z)/GYROSCOPE_SENSITIVITY;
 	Errer_pitch = -(float)ch2 * 0.25f - ((float)cal_pitch)	;
@@ -698,19 +698,19 @@ void PID_controller(void)
 #endif
   // protect  wind-up
 
-	
-	Sum_Error_yaw =   constrain((Sum_Error_yaw   + (Error_yaw   /sampleFreq)), -250.0f , 250.0f) ;
-	Sum_Error_pitch = constrain((Sum_Error_pitch + (Errer_pitch /sampleFreq)), -250.0f , 250.0f) ;
-	Sum_Error_roll =  constrain((Sum_Error_roll  + (Error_roll  /sampleFreq)), -250.0f , 250.0f) ;
-	
+if (T_center	> 500){
+	Sum_Error_yaw =   constrain((Sum_Error_yaw   + (Error_yaw   /sampleFreq)), -100.0f , 100.0f) ;
+	Sum_Error_pitch = constrain((Sum_Error_pitch + (Errer_pitch /sampleFreq)), -100.0f , 100.0f) ;
+	Sum_Error_roll =  constrain((Sum_Error_roll  + (Error_roll  /sampleFreq)), -100.0f , 100.0f) ;
+}
 	
 	D_Error_yaw =  (Error_yaw-Buf_D_Error_yaw)    *sampleFreq ;
 	D_Error_pitch =(Errer_pitch-Buf_D_Errer_pitch)*sampleFreq;
 	D_Error_roll = (Error_roll-Buf_D_Error_roll)  *sampleFreq;
 
-	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	  * Sum_Error_yaw)   + constrain((Kd_yaw * D_Error_yaw), -1000, 1000);
-	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch) + constrain((Kd_pitch * D_Error_pitch), -1000, 1000);
-	Del_roll	= (Kp_roll  * Error_roll)		+ (Ki_roll	* Sum_Error_roll)  + constrain((Kd_roll * D_Error_roll), -1000, 1000);
+	Del_yaw		= (Kp_yaw   * Error_yaw)		+ (Ki_yaw	  * Sum_Error_yaw)   + constrain((Kd_yaw * D_Error_yaw), -1500, 1500);
+	Del_pitch	= (Kp_pitch * Errer_pitch)	+ (Ki_pitch	* Sum_Error_pitch) + constrain((Kd_pitch * D_Error_pitch), -1500, 1500);
+	Del_roll	= (Kp_roll  * Error_roll)		+ (Ki_roll	* Sum_Error_roll)  + constrain((Kd_roll * D_Error_roll), -1500, 1500);
 
 	motor_A = T_center +Del_pitch	+Del_roll +Del_yaw;
 	motor_B = T_center +Del_pitch	-Del_roll -Del_yaw;
@@ -768,7 +768,7 @@ void Interrupt_call(void)
 		
 			/* Read data from sensor */
 		Read_MPU6000();
-		Read_HMC5983();
+		//Read_HMC5983();
 
 		AHRS(); 
 		/* Controller */
@@ -783,9 +783,9 @@ void Interrupt_call(void)
 //			gy_diff = b;
 //			gx_diff = c;
 
-			Sum_Error_yaw=0;
-			Sum_Error_pitch=0;
-			Sum_Error_roll=0;         
+//			Sum_Error_yaw=0;
+//			Sum_Error_pitch=0;
+//			Sum_Error_roll=0;         
 			
 			motor_A=0;
 			motor_B=0;
@@ -1122,17 +1122,17 @@ void getPIDgain(uint8_t I2C_rx_data_index)
 
 	if (checksum_buffer == sum)
 	{
-		Kp_roll = (float)Kp_roll_tmp * 0.03f;
-		Ki_roll = (float)Ki_roll_tmp * 0.03f;
-		Kd_roll = (float)Kd_roll_tmp * 0.03f;
+		Kp_roll = (float)Kp_roll_tmp * 0.025f;
+		Ki_roll = (float)Ki_roll_tmp * 0.025f;
+		Kd_roll = (float)Kd_roll_tmp * 0.025f;
 
-		Kp_pitch = (float)Kp_pitch_tmp * 0.03f;
-		Ki_pitch = (float)Ki_pitch_tmp * 0.03f;
-		Kd_pitch = (float)Kd_pitch_tmp * 0.03f;
+		Kp_pitch = (float)Kp_pitch_tmp * 0.025f;
+		Ki_pitch = (float)Ki_pitch_tmp * 0.025f;
+		Kd_pitch = (float)Kd_pitch_tmp * 0.025f;
 
-		Kp_yaw = (float)Kp_yaw_tmp * 0.03f;
-		Ki_yaw = (float)Ki_yaw_tmp * 0.03f;
-		Kd_yaw = (float)Kd_yaw_tmp * 0.03f;
+		Kp_yaw = (float)Kp_yaw_tmp * 0.025f;
+		Ki_yaw = (float)Ki_yaw_tmp * 0.025f;
+		Kd_yaw = (float)Kd_yaw_tmp * 0.025f;
 
 		Flag_setPID_gain_success = 1;
 		
