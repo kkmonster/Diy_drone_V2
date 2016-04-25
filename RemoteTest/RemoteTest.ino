@@ -7,7 +7,7 @@
 #define DEFAULT_SSID_LENGTH 16
 #define ARM_Address 55
 #define LED 16
-#define Print_Debug
+//#define Print_Debug
 
 typedef struct
 {
@@ -125,13 +125,13 @@ void setup()
 
 #ifdef Print_Debug
 
-    Serial.println("setPIDgain");
+  Serial.println("setPIDgain");
 
 #endif
-  
 
 
-	ticker_DEGUG.attach_ms(1000, blink);
+
+  ticker_DEGUG.attach_ms(1000, blink);
 
 
 }
@@ -481,7 +481,7 @@ uint8_t setPIDgain(void)
 {
   int16_t temp ;
 
-//1st
+  //1st
   uint8_t command = 0XFE;
 
   int8_t data_buffer[20] = {0};
@@ -515,8 +515,8 @@ uint8_t setPIDgain(void)
 
   twi_writeTo(ARM_Address, &command, 1, 1);
   twi_writeTo(ARM_Address, &command, 1, 1);
-// 2nd
-  
+  // 2nd
+
   for (int index = 0; index < 20; index++)
   {
     twi_writeTo(ARM_Address, (uint8_t*)data_buffer + index, 1, 1);
@@ -532,7 +532,19 @@ uint8_t setPIDgain(void)
 
 void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, int8_t yaw_tmp)
 {
-//1st
+  //1st
+
+  static int16_t throttle_tmp_buffer;
+
+
+  if (analogRead(A0) < 770)
+  {
+    if (throttle_tmp_buffer > 0) throttle_tmp_buffer-- ;
+    throttle_tmp = throttle_tmp_buffer / 10;
+  } else {
+    throttle_tmp_buffer = throttle_tmp * 10;
+  }
+
   int8_t command = roll_tmp + pitch_tmp + throttle_tmp + yaw_tmp;
 
   twi_writeTo(ARM_Address, (uint8_t*)&roll_tmp, 1, 1);
@@ -544,7 +556,7 @@ void sentControlcommand(int8_t roll_tmp, int8_t pitch_tmp, int8_t throttle_tmp, 
   command = 0xFD;
   twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
   twi_writeTo(ARM_Address, (uint8_t*)&command, 1, 1);
-// 2nd
+  // 2nd
   command = roll_tmp + pitch_tmp + throttle_tmp + yaw_tmp;
 
   twi_writeTo(ARM_Address, (uint8_t*)&roll_tmp, 1, 1);
